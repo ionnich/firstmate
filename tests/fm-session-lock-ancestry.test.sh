@@ -231,6 +231,12 @@ SH
     lib_eval "$fakebin" "fm_harness_process_matches python3 'python3 /opt/$harness/session.py'" \
       || fail "Python script for '$harness' lost session identity"
   done
+  lib_eval "$fakebin" "fm_harness_process_matches bun 'bun /opt/homebrew/bin/pi --tui-mode regular'" \
+    || fail "bun-wrapped Pi lost session identity"
+  ! lib_eval "$fakebin" "fm_harness_process_matches bun 'bun /usr/bin/true'" \
+    || fail "bare bun was treated as a live harness"
+  ! lib_eval "$fakebin" "fm_harness_process_matches bun 'bun /opt/x/node_modules/@howaboua/pi-codex-conversion/exec_bridge.js'" \
+    || fail "bun exec_bridge path was treated as a live harness"
   pass "session-lock: exec_bridge cannot mask direct Pi while supported harness and interpreter identities remain live"
 }
 
