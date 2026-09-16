@@ -4283,6 +4283,18 @@ spawn_send_key "$T" Enter
 # rather than working.
 if [ "$HARNESS" = pi ] || [ "$HARNESS" = pi-signed ]; then
   if ! pi_wait_no_early_exit "$BACKEND" "$T"; then
+    # Task metadata is published (~line 4032) before this gate runs, so the
+    # busy-state seed armed at spawn (source=fm-spawn) is attached to a real,
+    # already-registered task id, not an orphaned record. Retire it
+    # unconditionally before refusing, so no independent busy read (crew-state,
+    # the session-start digest) can observe a busy record for a worker that
+    # never came alive. Secondmate spawns never arm this contract at all
+    # (guarded by [ "$KIND" != secondmate ] above), so BUSY_GEN is legitimately
+    # unset there; nothing to retire in that case.
+    if [ -n "${BUSY_GEN:-}" ]; then
+      "$FM_ROOT/bin/fm-busy-event.sh" retire "$STATE_REAL" "$ID" --gen "$BUSY_GEN" || \
+        echo "warning: could not retire busy-state after dead-worker refusal for $ID" >&2
+    fi
     echo "error: $HARNESS worker exited immediately after launch in $T; check model is provider-qualified and credentials are valid" >&2
     exit 1
   fi

@@ -198,6 +198,7 @@ SH
     FM_SPAWN_NO_GUARD=1 \
     "$ROOT/bin/fm-spawn.sh" "$id" "$sm" --secondmate --harness pi 2>&1)
   LIVENESS_STATUS=$?
+  LIVENESS_HOME=$home
 
   "$real_tmux" -L "$socket" kill-server >/dev/null 2>&1
 }
@@ -208,7 +209,17 @@ test_liveness_gate_refuses_dead_worker() {
   [ "$LIVENESS_STATUS" -ne 0 ] || fail "spawn succeeded for a pi worker that exited immediately after launch"$'\n'"$LIVENESS_OUT"
   assert_contains "$LIVENESS_OUT" "exited immediately after launch" \
     "refusal did not name the post-launch liveness failure"$'\n'"$LIVENESS_OUT"
-  pass "the post-launch liveness gate refuses a pi worker that exits immediately"
+  # Independent busy read, not just the exit code: task metadata was already
+  # published before this gate runs (fm-spawn.sh publishes at ~line 4032,
+  # well before the liveness gate), so the busy-state seed armed at spawn
+  # (source=fm-spawn) must be retired on refusal or a later independent
+  # reader (fm-crew-state.sh, the session-start digest) would still see this
+  # dead worker as busy.
+  assert_absent "$LIVENESS_HOME/state/pi-liveness-dead.busy-state" \
+    "busy-state record was not retired after the dead-worker gate refused the spawn"
+  assert_absent "$LIVENESS_HOME/state/pi-liveness-dead.busy-gen" \
+    "busy-gen sidecar was not retired after the dead-worker gate refused the spawn"
+  pass "the post-launch liveness gate refuses a pi worker that exits immediately and retires its busy-state"
 }
 
 test_liveness_gate_allows_alive_worker() {
@@ -223,4 +234,103 @@ test_liveness_gate_allows_alive_worker() {
 test_liveness_gate_refuses_dead_worker
 test_liveness_gate_allows_alive_worker
 
+# --- defect 2: busy-state retirement on the dead-worker gate ---------------
+#
+# The tests above use a --secondmate spawn, which never arms the busy-state
+# contract at all (bin/fm-spawn.sh guards the whole arm block with
+# [ "$KIND" != secondmate ]), so they cannot prove the retirement fix: the
+# busy-state file is absent either way, fixed or not. A real kind=ship task
+# DOES arm it, so this exercises a ship task through --relaunch (which reuses
+# the existing recorded worktree/window and so, like the secondmate path,
+# skips the heavier 'treehouse get' worktree-acquisition flow) against a real
+# tmux server, proving the gate actually retires a real armed record and not
+# just that fm-spawn exits non-zero.
+test_busy_state_retired_after_dead_relaunch() {
+  command -v tmux >/dev/null 2>&1 || { echo "skip: tmux not found"; return 0; }
+  local case_dir home proj wt id socket real_tmux fakebin
+  case_dir="$TMP_ROOT/busy-retire-relaunch"
+  home="$case_dir/home"
+  proj="$case_dir/proj"
+  wt="$case_dir/wt"
+  id=pi-busy-retire-relaunch
+  socket="fm-pi-busy-retire-$$"
+  fakebin="$case_dir/fakebin"
+  real_tmux=$(command -v tmux) || fail "tmux not found; cannot test busy-state retirement"
+  LIVENESS_SOCKETS+=("$socket")
+
+  fm_test_spawn_home "$home" pi
+  fm_git_worktree "$proj" "$wt" "task-$id"
+  mkdir -p "$home/data/$id" "$fakebin"
+  cat > "$home/data/$id/brief.md" <<EOF
+# Task
+## Captain's intent
+Exercise the busy-state retirement fix.
+
+## Firstmate spec
+Verify the dead-worker gate retires the busy-state seed.
+EOF
+  {
+    echo "window=fmses:fm-$id"
+    echo "endpoint_task_id=$id"
+    echo "worktree=$wt"
+    echo "project=$proj"
+    echo "harness=pi"
+    echo "kind=ship"
+    echo "mode=no-mistakes"
+    echo "yolo=off"
+  } > "$home/state/$id.meta"
+
+  # A real, private tmux session with the recorded window already sitting at
+  # a bare shell prompt (no agent process), which the tmux agent-state
+  # classifier reads as 'dead' - exactly the precondition --relaunch requires
+  # before it will hand a fresh agent that endpoint.
+  "$real_tmux" -L "$socket" new-session -d -s fmses -n "fm-$id" -c "$wt"
+
+  cat > "$fakebin/tmux" <<SH
+#!/usr/bin/env bash
+exec "$real_tmux" -L "$socket" "\$@"
+SH
+  chmod +x "$fakebin/tmux"
+
+  # Same dead-on-launch fake pi used by run_pi_liveness_case above: advertises
+  # --help, then exits immediately instead of starting an agent process.
+  cat > "$fakebin/pi" <<'SH'
+#!/usr/bin/env bash
+set -u
+if [ "${1:-}" = --help ]; then
+  printf '%s\n' 'Pi 0.84.0' 'Options: --help --tui-mode <mode>'
+  exit 0
+fi
+exit 1
+SH
+  chmod +x "$fakebin/pi"
+
+  local out status
+  out=$(env -u HERDR_ENV -u HERDR_TAB_ID -u HERDR_SOCKET_PATH -u HERDR_BIN_PATH \
+    -u HERDR_WORKSPACE_ID -u HERDR_PANE_ID -u TMUX \
+    PATH="$fakebin:$PATH" \
+    FM_ROOT_OVERRIDE='' FM_HOME="$home" HOME="$case_dir/user-home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" "$id" --relaunch --harness pi 2>&1)
+  status=$?
+
+  "$real_tmux" -L "$socket" kill-server >/dev/null 2>&1
+
+  [ "$status" -ne 0 ] || fail "relaunch succeeded for a pi worker that exited immediately after launch"$'\n'"$out"
+  assert_contains "$out" "exited immediately after launch" \
+    "refusal did not name the post-launch liveness failure"$'\n'"$out"
+  # The genuine independent-reader assertion: this is a kind=ship task, so
+  # the busy-state contract WAS armed before the gate ran (unlike the
+  # secondmate cases above). If the retire call were missing, this file
+  # would still be present and reading busy=source=fm-spawn.
+  assert_absent "$home/state/$id.busy-state" \
+    "busy-state record was not retired after the dead-worker gate refused a ship-kind relaunch"
+  assert_absent "$home/state/$id.busy-gen" \
+    "busy-gen sidecar was not retired after the dead-worker gate refused a ship-kind relaunch"
+  pass "the dead-worker gate retires a genuinely-armed ship-kind busy-state record"
+}
+
+test_busy_state_retired_after_dead_relaunch
 echo "# all fm-spawn-pi-model-qualify tests passed"
