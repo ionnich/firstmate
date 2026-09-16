@@ -8,7 +8,7 @@ Verified on 2026-07-27 with Pi and Pi-signed 0.82.0 unless a fact gives another 
 | Fact | Value |
 |---|---|
 | Busy state | The Firstmate-owned extension's `agent_start` marks busy and `agent_settled`, confirmed by `ctx.isIdle()`, marks idle; this covers retries, compaction, tool loops, and queued continuations. |
-| Launch verification | Pi/pi-signed give no readiness banner to poll for, so `pi_wait_no_early_exit` in `../../../bin/fm-spawn.sh` polls `fm_backend_agent_alive` across a bounded budget (`FM_PI_ALIVE_POLLS`, `FM_PI_ALIVE_POLL_INTERVAL`) after send and refuses the spawn on a confirmed death instead of assuming success; this catches a model/auth failure that exits the worker immediately after launch. |
+| Launch verification | Pi/pi-signed give no readiness banner to poll for, so `pi_wait_no_early_exit` in `../../../bin/fm-spawn.sh` polls `fm_backend_agent_alive` across a bounded budget (`FM_PI_ALIVE_POLLS`, `FM_PI_ALIVE_POLL_INTERVAL`) after send and refuses the spawn on a confirmed death instead of assuming success; this catches a model/auth failure that exits the worker immediately after launch. On refusal it also retires the busy-state seed armed at spawn via `../../../bin/fm-busy-event.sh retire` (a no-op for secondmate spawns, which never arm it), so an independent busy read never reports a dead worker as `working`. |
 | Exit command | `/quit`. |
 | Interrupt | Single Escape. |
 | Skill invocation | No separate verified form beyond normal command behavior; use natural language when the exact command is uncertain. |
