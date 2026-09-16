@@ -1468,8 +1468,8 @@ pi_model_qualify() {  # <pi-bin> <model>
   case "$model" in */*) printf '%s\n' "$model"; return 0 ;; esac
   
   # Fetch model catalog
-  listing=$("$bin" --list-models "$model" 2>&1) || {
-    echo "error: failed to run '$bin --list-models $model'; cannot validate model '$model'" >&2
+  listing=$("$bin" --list-models 2>&1) || {
+    echo "error: failed to run '$bin --list-models'; cannot validate model '$model'" >&2
     return 1
   }
   
@@ -3321,6 +3321,22 @@ agy_spawn_fail() {  # <detail>
   rovo_endpoint_cleanup
 }
 
+# Defect 2 fix: Pi/pi-signed carries no readiness banner to poll for, so this
+# watches for a confirmed death instead of a confirmed readiness. A single
+# fixed-delay sample can misread either direction: a cold start slightly over
+# the delay reads as dead, while an auth rejection needing a network round
+# trip can die after the sample was already taken. Polling across the whole
+# budget catches a death anywhere in it, and only a death ends the wait early.
+pi_wait_no_early_exit() {  # <backend> <target>
+  local backend=$1 target=$2 i=0 max=${FM_PI_ALIVE_POLLS:-6} interval=${FM_PI_ALIVE_POLL_INTERVAL:-0.5}
+  while [ "$i" -lt "$max" ]; do
+    sleep "$interval"
+    [ "$(fm_backend_agent_alive "$backend" "$target")" != "dead" ] || return 1
+    i=$((i + 1))
+  done
+  return 0
+}
+
 if [ "$RELAUNCH" -eq 1 ]; then
   # No worktree is acquired: the recorded one is reused as-is. What must be
   # proven instead is that the adopted endpoint's shell is actually sitting in
@@ -4266,8 +4282,7 @@ spawn_send_key "$T" Enter
 # before spawn reports success, so the task is correctly reported as failed
 # rather than working.
 if [ "$HARNESS" = pi ] || [ "$HARNESS" = pi-signed ]; then
-  sleep 0.8
-  if [ "$(fm_backend_agent_alive "$BACKEND" "$T")" = "dead" ]; then
+  if ! pi_wait_no_early_exit "$BACKEND" "$T"; then
     echo "error: $HARNESS worker exited immediately after launch in $T; check model is provider-qualified and credentials are valid" >&2
     exit 1
   fi
