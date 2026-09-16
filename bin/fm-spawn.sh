@@ -1452,6 +1452,53 @@ pi_supports_tui_mode() {
   printf '%s\n' "$help" | grep -Eq -- '(^|[[:space:]])--tui-mode([[:space:]=]|$)'
 }
 
+# Pi pre-launch model qualification (defect 1 fix). Pi's --model accepts both
+# bare ids and <provider>/<id> format. A bare id ambiguous across multiple
+# providers (e.g. claude-sonnet-4-5 available from both anthropic and cursor)
+# causes Pi to exit silently at startup when it cannot deterministically select
+# a provider. This qualification step detects ambiguous models and refuses the
+# spawn with an actionable error naming the providers and the qualified form to
+# use. A bare id available from exactly one provider is auto-qualified with a
+# stderr notice. Provider-qualified models pass through unchanged.
+# The listing is fetched from the resolved Pi executable using --list-models,
+# which prints one row per model: "<provider>  <model-id>  ...".
+pi_model_qualify() {  # <pi-bin> <model>
+  local bin=$1 model=$2 listing matches cnt provider qualified
+  # Provider-qualified form passes through
+  case "$model" in */*) printf '%s\n' "$model"; return 0 ;; esac
+  
+  # Fetch model catalog
+  listing=$("$bin" --list-models 2>&1) || {
+    echo "error: failed to run '$bin --list-models'; cannot validate model '$model'" >&2
+    return 1
+  }
+  
+  # Extract providers offering this exact model id (column 2 match)
+  matches=$(printf '%s\n' "$listing" | awk -v m="$model" '$2 == m {print $1}' | sort -u)
+  
+  if [ -z "$matches" ]; then
+    echo "error: Pi model '$model' not listed in '$bin --list-models'; choose a listed <provider>/<id> or omit --model" >&2
+    return 1
+  fi
+  
+  cnt=$(printf '%s\n' "$matches" | wc -l | tr -d ' ')
+  
+  if [ "$cnt" -gt 1 ]; then
+    echo "error: Pi model '$model' is ambiguous across $cnt providers:" >&2
+    printf '%s\n' "$matches" | sed 's/^/  /' >&2
+    provider=$(printf '%s\n' "$matches" | head -1)
+    echo "Pass --model as <provider>/<id> (e.g. --model $provider/$model) instead of bare id '$model'" >&2
+    return 1
+  fi
+  
+  # Single provider - auto-qualify
+  provider=$matches
+  qualified="$provider/$model"
+  echo "notice: qualifying bare Pi model '$model' as '$qualified'" >&2
+  printf '%s\n' "$qualified"
+}
+
+
 # omp pre-launch model validation. `omp models --json` (omp 18.1.11) prints
 # {"models":[{"provider","id","selector":"<provider>/<id>",...}]} for built-in and
 # auto-discovered providers only; it never lists a provider an extension
@@ -1808,6 +1855,10 @@ case "$HARNESS" in
       echo "error: $HARNESS executable not found on PATH; install it or select a different verified harness" >&2
       exit 1
     }
+    # Defect 1 fix: qualify ambiguous or unqualified models before launch
+    if [ -n "$MODEL" ] && [ "$MODEL" != default ]; then
+      MODEL=$(pi_model_qualify "$PI_BIN" "$MODEL") || exit 1
+    fi
     PI_TUI_MODE=
     if pi_supports_tui_mode "$PI_BIN"; then
       PI_TUI_MODE=' --tui-mode regular'
@@ -1859,7 +1910,16 @@ esac
 if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
   if [ "$MODEL_SET" -eq 0 ]; then
     SM_MODEL=$("$SCRIPT_DIR/fm-harness.sh" secondmate-model)
-    [ -z "$SM_MODEL" ] || MODEL=$SM_MODEL
+    if [ -n "$SM_MODEL" ]; then
+      MODEL=$SM_MODEL
+      case "$HARNESS" in
+        pi|pi-signed)
+          if [ "$MODEL" != default ]; then
+            MODEL=$(pi_model_qualify "$PI_BIN" "$MODEL") || exit 1
+          fi
+          ;;
+      esac
+    fi
   fi
   if [ "$EFFORT_SET" -eq 0 ]; then
     SM_EFFORT=$("$SCRIPT_DIR/fm-harness.sh" secondmate-effort)
@@ -3270,6 +3330,22 @@ agy_spawn_fail() {  # <detail>
   rovo_endpoint_cleanup
 }
 
+# Defect 2 fix: Pi/pi-signed carries no readiness banner to poll for, so this
+# watches for a confirmed death instead of a confirmed readiness. A single
+# fixed-delay sample can misread either direction: a cold start slightly over
+# the delay reads as dead, while an auth rejection needing a network round
+# trip can die after the sample was already taken. Polling across the whole
+# budget catches a death anywhere in it, and only a death ends the wait early.
+pi_wait_no_early_exit() {  # <backend> <target>
+  local backend=$1 target=$2 i=0 max=${FM_PI_ALIVE_POLLS:-6} interval=${FM_PI_ALIVE_POLL_INTERVAL:-0.5}
+  while [ "$i" -lt "$max" ]; do
+    sleep "$interval"
+    [ "$(fm_backend_agent_alive "$backend" "$target")" != "dead" ] || return 1
+    i=$((i + 1))
+  done
+  return 0
+}
+
 if [ "$RELAUNCH" -eq 1 ]; then
   # No worktree is acquired: the recorded one is reused as-is. What must be
   # proven instead is that the adopted endpoint's shell is actually sitting in
@@ -4209,6 +4285,29 @@ if [ "${HERDR_PROJECTED:-0}" -eq 1 ]; then
   spawn_herdr_presentation_order_lock_release
 fi
 spawn_send_key "$T" Enter
+# Defect 2 fix: verify Pi/pi-signed didn't exit immediately after launch.
+# An early exit (model/auth failure) leaves the fm-spawn busy seed uncleared
+# because agent_start never fires. This post-launch check catches that case
+# before spawn reports success, so the task is correctly reported as failed
+# rather than working.
+if [ "$HARNESS" = pi ] || [ "$HARNESS" = pi-signed ]; then
+  if ! pi_wait_no_early_exit "$BACKEND" "$T"; then
+    # Task metadata is published (~line 4032) before this gate runs, so the
+    # busy-state seed armed at spawn (source=fm-spawn) is attached to a real,
+    # already-registered task id, not an orphaned record. Retire it
+    # unconditionally before refusing, so no independent busy read (crew-state,
+    # the session-start digest) can observe a busy record for a worker that
+    # never came alive. Secondmate spawns never arm this contract at all
+    # (guarded by [ "$KIND" != secondmate ] above), so BUSY_GEN is legitimately
+    # unset there; nothing to retire in that case.
+    if [ -n "${BUSY_GEN:-}" ]; then
+      "$FM_ROOT/bin/fm-busy-event.sh" retire "$STATE_REAL" "$ID" --gen "$BUSY_GEN" || \
+        echo "warning: could not retire busy-state after dead-worker refusal for $ID" >&2
+    fi
+    echo "error: $HARNESS worker exited immediately after launch in $T; check model is provider-qualified and credentials are valid" >&2
+    exit 1
+  fi
+fi
 if [ "$HARNESS" = kimi ]; then
   if ! kimi_wait_for_ready; then
     kimi_spawn_fail "kimi did not show a verified ready signal before brief delivery"
