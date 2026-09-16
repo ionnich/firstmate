@@ -8,12 +8,14 @@ Verified on 2026-07-27 with Pi and Pi-signed 0.82.0 unless a fact gives another 
 | Fact | Value |
 |---|---|
 | Busy state | The Firstmate-owned extension's `agent_start` marks busy and `agent_settled`, confirmed by `ctx.isIdle()`, marks idle; this covers retries, compaction, tool loops, and queued continuations. |
+| Launch verification | Pi/pi-signed give no readiness banner to poll for, so `pi_wait_no_early_exit` in `../../../bin/fm-spawn.sh` polls `fm_backend_agent_alive` across a bounded budget (`FM_PI_ALIVE_POLLS`, `FM_PI_ALIVE_POLL_INTERVAL`) after send and refuses the spawn on a confirmed death instead of assuming success; this catches a model/auth failure that exits the worker immediately after launch. |
 | Exit command | `/quit`. |
 | Interrupt | Single Escape. |
 | Skill invocation | No separate verified form beyond normal command behavior; use natural language when the exact command is uncertain. |
 | Model flag | `--model <model>`. |
 | Effort flag | `--thinking <low\|medium\|high\|xhigh\|max>`; both identities expose the same levels and completed the same model-qualified max-thinking smoke. |
 | Model discovery | Run the selected executable as `<executable> --list-models [search]`; Pi's installed `docs/models.md` owns how built-in, extension-registered, and custom provider/model entries reach that list. |
+| Model qualification | `pi_model_qualify` in `../../../bin/fm-spawn.sh` checks a bare `--model` id against `--list-models` before launch: unique to one provider auto-qualifies to `<provider>/<id>` with a stderr notice, ambiguous across providers refuses the spawn naming the candidates, and a provider-qualified id passes through unchanged. This closes the silent-dead-launch gap a bare id ambiguous across authenticated providers otherwise causes. |
 
 Native Codex sessions may request `ultra` through the native extension flag described by `../../../bin/fm-spawn.sh`; it is separate from Pi's thinking levels.
 Pi has no permission system, so workers are always autonomous.
