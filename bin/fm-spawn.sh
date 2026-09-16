@@ -1910,7 +1910,16 @@ esac
 if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
   if [ "$MODEL_SET" -eq 0 ]; then
     SM_MODEL=$("$SCRIPT_DIR/fm-harness.sh" secondmate-model)
-    [ -z "$SM_MODEL" ] || MODEL=$SM_MODEL
+    if [ -n "$SM_MODEL" ]; then
+      MODEL=$SM_MODEL
+      case "$HARNESS" in
+        pi|pi-signed)
+          if [ "$MODEL" != default ]; then
+            MODEL=$(pi_model_qualify "$PI_BIN" "$MODEL") || exit 1
+          fi
+          ;;
+      esac
+    fi
   fi
   if [ "$EFFORT_SET" -eq 0 ]; then
     SM_EFFORT=$("$SCRIPT_DIR/fm-harness.sh" secondmate-effort)

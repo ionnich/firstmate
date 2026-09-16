@@ -114,6 +114,69 @@ test_ambiguous_model_refused
 test_unambiguous_model_qualified
 test_qualified_model_passes
 
+# --- defect 1: config-sourced secondmate model also gets qualified ---------
+#
+# config/secondmate-harness carries "<harness> [<model>] [<effort>]"; when no
+# --harness/--model flag is passed, fm-spawn.sh resolves MODEL from that
+# file's token AFTER the explicit-flag qualify call already ran with an empty
+# MODEL, so the config-sourced token needs its own qualify call to get the
+# same loud-refusal-or-resolve treatment as an explicit --model.
+
+make_secondmate_config_case() {
+  local name=$1 id=$2 sm_line=$3 case_dir home sm fakebin
+  case_dir="$TMP_ROOT/$name"
+  home="$case_dir/home"
+  sm="$case_dir/secondmate-home"
+  fakebin=$(make_spawn_fakebin "$case_dir" pi)
+  make_fake_pi "$fakebin"
+  fm_test_spawn_home "$home"
+  printf '%s\n' "$sm_line" > "$home/config/secondmate-harness"
+  mkdir -p "$sm/data"
+  printf '# Firstmate\n' > "$sm/AGENTS.md"
+  printf '%s\n' "$id" > "$sm/.fm-secondmate-home"
+  printf 'charter for %s\n' "$id" > "$sm/data/charter.md"
+  printf '%s\n' "$case_dir|$home|$sm|$fakebin"
+}
+
+read_sm_config_case() {
+  IFS='|' read -r _ HOME_DIR SM_DIR FAKEBIN_DIR <<EOF
+$1
+EOF
+}
+
+test_secondmate_config_model_ambiguous_refused() {
+  local rec id out status
+  id=pi-qualify-sm-config-ambiguous-z4
+  rec=$(make_secondmate_config_case sm-config-ambiguous "$id" "pi claude-sonnet-4-5")
+  read_sm_config_case "$rec"
+
+  out=$(fm_test_run_spawn "$HOME_DIR" "$SM_DIR" "$FAKEBIN_DIR" "$id" "$SM_DIR" --secondmate)
+  status=$?
+
+  [ "$status" -ne 0 ] || fail "ambiguous config-sourced model spawn succeeded when it should have refused"$'\n'"$out"
+  assert_contains "$out" "ambiguous across 2 providers" \
+    "error did not mention ambiguity across 2 providers"$'\n'"$out"
+  assert_contains "$out" "anthropic/claude-sonnet-4-5" \
+    "error did not suggest the qualified form"$'\n'"$out"
+  pass "config-sourced ambiguous secondmate model refused with actionable error"
+}
+
+test_secondmate_config_model_unambiguous_qualified() {
+  local rec id out
+  id=pi-qualify-sm-config-unambiguous-z5
+  rec=$(make_secondmate_config_case sm-config-unambiguous "$id" "pi gemini-3-8-flash")
+  read_sm_config_case "$rec"
+
+  out=$(fm_test_run_spawn "$HOME_DIR" "$SM_DIR" "$FAKEBIN_DIR" "$id" "$SM_DIR" --secondmate)
+
+  assert_contains "$out" "notice: qualifying bare Pi model 'gemini-3-8-flash' as 'google/gemini-3-8-flash'" \
+    "config-sourced unambiguous secondmate model was not auto-qualified"$'\n'"$out"
+  pass "config-sourced unambiguous secondmate model auto-qualified"
+}
+
+test_secondmate_config_model_ambiguous_refused
+test_secondmate_config_model_unambiguous_qualified
+
 # --- defect 2: post-launch liveness gate -----------------------------------
 #
 # fm_backend_tmux_agent_state (bin/backends/tmux.sh) reads `ps -t <pane-tty>`,
