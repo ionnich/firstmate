@@ -1452,6 +1452,53 @@ pi_supports_tui_mode() {
   printf '%s\n' "$help" | grep -Eq -- '(^|[[:space:]])--tui-mode([[:space:]=]|$)'
 }
 
+# Pi pre-launch model qualification (defect 1 fix). Pi's --model accepts both
+# bare ids and <provider>/<id> format. A bare id ambiguous across multiple
+# providers (e.g. claude-sonnet-4-5 available from both anthropic and cursor)
+# causes Pi to exit silently at startup when it cannot deterministically select
+# a provider. This qualification step detects ambiguous models and refuses the
+# spawn with an actionable error naming the providers and the qualified form to
+# use. A bare id available from exactly one provider is auto-qualified with a
+# stderr notice. Provider-qualified models pass through unchanged.
+# The listing is fetched from the resolved Pi executable using --list-models,
+# which prints one row per model: "<provider>  <model-id>  ...".
+pi_model_qualify() {  # <pi-bin> <model>
+  local bin=$1 model=$2 listing matches cnt provider qualified
+  # Provider-qualified form passes through
+  case "$model" in */*) printf '%s\n' "$model"; return 0 ;; esac
+  
+  # Fetch model catalog
+  listing=$("$bin" --list-models "$model" 2>&1) || {
+    echo "error: failed to run '$bin --list-models $model'; cannot validate model '$model'" >&2
+    return 1
+  }
+  
+  # Extract providers offering this exact model id (column 2 match)
+  matches=$(printf '%s\n' "$listing" | awk -v m="$model" '$2 == m {print $1}' | sort -u)
+  
+  if [ -z "$matches" ]; then
+    echo "error: Pi model '$model' not listed in '$bin --list-models'; choose a listed <provider>/<id> or omit --model" >&2
+    return 1
+  fi
+  
+  cnt=$(printf '%s\n' "$matches" | wc -l | tr -d ' ')
+  
+  if [ "$cnt" -gt 1 ]; then
+    echo "error: Pi model '$model' is ambiguous across $cnt providers:" >&2
+    printf '%s\n' "$matches" | sed 's/^/  /' >&2
+    provider=$(printf '%s\n' "$matches" | head -1)
+    echo "Pass --model as <provider>/<id> (e.g. --model $provider/$model) instead of bare id '$model'" >&2
+    return 1
+  fi
+  
+  # Single provider - auto-qualify
+  provider=$matches
+  qualified="$provider/$model"
+  echo "notice: qualifying bare Pi model '$model' as '$qualified'" >&2
+  printf '%s\n' "$qualified"
+}
+
+
 # omp pre-launch model validation. `omp models --json` (omp 18.1.11) prints
 # {"models":[{"provider","id","selector":"<provider>/<id>",...}]} for built-in and
 # auto-discovered providers only; it never lists a provider an extension
@@ -1808,6 +1855,10 @@ case "$HARNESS" in
       echo "error: $HARNESS executable not found on PATH; install it or select a different verified harness" >&2
       exit 1
     }
+    # Defect 1 fix: qualify ambiguous or unqualified models before launch
+    if [ -n "$MODEL" ] && [ "$MODEL" != default ]; then
+      MODEL=$(pi_model_qualify "$PI_BIN" "$MODEL") || exit 1
+    fi
     PI_TUI_MODE=
     if pi_supports_tui_mode "$PI_BIN"; then
       PI_TUI_MODE=' --tui-mode regular'
@@ -4209,6 +4260,18 @@ if [ "${HERDR_PROJECTED:-0}" -eq 1 ]; then
   spawn_herdr_presentation_order_lock_release
 fi
 spawn_send_key "$T" Enter
+# Defect 2 fix: verify Pi/pi-signed didn't exit immediately after launch.
+# An early exit (model/auth failure) leaves the fm-spawn busy seed uncleared
+# because agent_start never fires. This post-launch check catches that case
+# before spawn reports success, so the task is correctly reported as failed
+# rather than working.
+if [ "$HARNESS" = pi ] || [ "$HARNESS" = pi-signed ]; then
+  sleep 0.8
+  if [ "$(fm_backend_agent_alive "$BACKEND" "$T")" = "dead" ]; then
+    echo "error: $HARNESS worker exited immediately after launch in $T; check model is provider-qualified and credentials are valid" >&2
+    exit 1
+  fi
+fi
 if [ "$HARNESS" = kimi ]; then
   if ! kimi_wait_for_ready; then
     kimi_spawn_fail "kimi did not show a verified ready signal before brief delivery"
