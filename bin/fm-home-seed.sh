@@ -49,6 +49,8 @@ SUB_HOME_PARENT_MARKER=".fm-secondmate-parent"
 . "$SCRIPT_DIR/fm-secondmate-charter-lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/fm-project-registry-lib.sh
+. "$SCRIPT_DIR/fm-project-registry-lib.sh"
 
 usage() {
   echo "usage: fm-home-seed.sh <id> <home|-> {<project>...|--no-projects}" >&2
@@ -662,14 +664,6 @@ seed_rollback() {
   fi
 }
 
-registry_line_for_project() {
-  local project=$1 line
-  [ -f "$DATA/projects.md" ] || return 1
-  line=$(awk -v n="$project" '$1=="-" && $2==n { print; exit }' "$DATA/projects.md")
-  [ -n "$line" ] || return 1
-  printf '%s\n' "$line"
-}
-
 project_mode_in_home() {
   local home=$1 project=$2 mode
   read -r mode _ <<EOF
@@ -697,7 +691,7 @@ sync_project_registry() {
   fi
   today=$(date +%F)
   for project in "$@"; do
-    line=$(registry_line_for_project "$project" || true)
+    line=$(fm_project_registry_line "$DATA/projects.md" "$project" || true)
     if [ -z "$line" ]; then
       line="- $project - cloned project (added $today)"
     fi
