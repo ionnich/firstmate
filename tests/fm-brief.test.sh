@@ -640,6 +640,10 @@ test_secondmate_marked_request_reporting_contract() {
     "secondmate charter lost the mechanical helper invocation"
   assert_grep 'do not pass a status path' "$brief" \
     "secondmate charter still tells the mate to pass a hand path to the helper"
+  assert_grep 'bin/fm-secondmate-report.sh --key <slug> <verb> <corr_id> <note>' "$brief" \
+    "secondmate charter did not document --key for closing a keyed marked request"
+  assert_grep 'a `resolved` line missing that `--key` only closes the unkeyed default decision' "$brief" \
+    "secondmate charter did not warn that a resolved line without --key leaves a keyed record open"
   assert_grep 'For a terse result, a status line is the whole answer.' "$brief" \
     "secondmate charter lost terse result reporting"
   assert_grep 'append a status line that points to that doc' "$brief" \
