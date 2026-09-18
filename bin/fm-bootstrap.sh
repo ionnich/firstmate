@@ -18,6 +18,8 @@
 #                 "BACKLOG_RECONCILE: code-root <file> is not this home's <file>; ...",
 #                 "TANGLE: <remediation>",
 #                 "SECONDMATE_SYNC: secondmate <id>: skipped: <reason>",
+#                 "SECONDMATE_SYNC: secondmate home <path>: project registry for
+#                 <project> converged to primary posture: <old-line> -> <new-line>",
 #                 "NUDGE_SECONDMATES: secondmate <id>: send failed: <reason>",
 #                 "BOOTSTRAP_INFO: nudged fm-<id> with '<message>'",
 #                 "SECONDMATE_LIVENESS: secondmate <id>: skipped: <reason>|respawn failed after <cause>: <reason>",
@@ -40,9 +42,11 @@
 #          The secondmate sweep also propagates declared inherited local material
 #          into each validated live secondmate home.
 #          SECONDMATE_SYNC lines report actionable skipped placement-specific
-#          syncs or inheritance failures for live secondmate homes, plus
-#          quarantine diagnostics for divergent shared captain-preference
-#          copies; no-op/current and successful updates stay quiet.
+#          syncs or inheritance failures for live secondmate homes, quarantine
+#          diagnostics for divergent shared captain-preference copies, and each
+#          data/projects.md entry converged to the primary's registered
+#          posture; no-op/current config and already-converged registry
+#          entries stay quiet.
 #          SECONDMATE_LIVENESS lines report only actionable failures from the
 #          recovery-grade state owned by bin/fm-backend.sh's
 #          fm_backend_agent_state: skipped distinguishes an existing ambiguous
