@@ -56,9 +56,14 @@
 #
 # shellcheck source=bin/fm-startup-memory-budget-lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-startup-memory-budget-lib.sh"
+# shellcheck source=bin/fm-project-registry-lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-project-registry-lib.sh"
 
-# The one shared data file in this inheritance contract. There is deliberately
-# no shared learnings file.
+# The whole-file-mirror shared data file in this inheritance contract. There
+# is deliberately no shared learnings file. data/projects.md is a second
+# inherited data item, converged per project entry rather than as a whole-file
+# mirror because a secondmate's copy may also hold locally registered projects
+# the primary never knew about; see propagate_project_registry below.
 FM_SHARED_CAPTAIN_FILE="captain-shared.md"
 FM_SHARED_CAPTAIN_REL="data/$FM_SHARED_CAPTAIN_FILE"
 FM_SHARED_CAPTAIN_MODE="444"
@@ -439,6 +444,44 @@ propagate_shared_captain_preferences() {
   return "$rc"
 }
 
+# propagate_project_registry <src-data-dir> <dest-data-dir>
+# Converge dest's data/projects.md against the primary's copy for every
+# project both registries know about (fm_project_registry_converge owns the
+# per-project merge; a project registered only locally in dest is left
+# alone). This is the fix for the drift class where a secondmate's registered
+# delivery posture (mode, +yolo) was captured once at seed time and never
+# refreshed, so a later captain change to the primary's registry silently
+# stopped applying downstream. Each corrected entry is REPORTED as a
+# SECONDMATE_SYNC line naming the project and its old and new posture line,
+# so a lossy copy is surfaced rather than silently re-obeyed. Returns
+# non-zero only on a real I/O failure.
+propagate_project_registry() {
+  local src_data=$1 dest_data=$2 dest_home primary_reg dest_reg
+  local project old new out rc=0
+  [ -n "$src_data" ] || return 1
+  [ -n "$dest_data" ] || return 1
+  primary_reg="$src_data/projects.md"
+  dest_reg="$dest_data/projects.md"
+  dest_home=${dest_data%/data}
+  if ! out=$(fm_project_registry_converge "$primary_reg" "$dest_reg"); then
+    warn_inheritable_config_error "data/projects.md" "$dest_reg" "failed to converge project registry"
+    record_inheritable_config_result "data/projects.md" error "failed to converge project registry"
+    return 1
+  fi
+  if [ -z "$out" ]; then
+    record_inheritable_config_result "data/projects.md" unchanged ""
+    return 0
+  fi
+  while IFS=$'\t' read -r project old new; do
+    [ -n "$project" ] || continue
+    printf 'SECONDMATE_SYNC: secondmate home %s: project registry for %s converged to primary posture: %s -> %s\n' "$dest_home" "$project" "$old" "$new"
+    record_inheritable_config_result "data/projects.md" pushed "$project: $old -> $new"
+  done <<EOF
+$out
+EOF
+  return "$rc"
+}
+
 propagate_secondmate_inheritance() {
   local src_home=$1 dest_home=$2 src_config=${3:-} src_data=${4:-} rc
   [ -n "$src_home" ] || return 1
@@ -448,6 +491,7 @@ propagate_secondmate_inheritance() {
   rc=0
   propagate_inheritable_config "$src_config" "$dest_home/config" || rc=1
   propagate_shared_captain_preferences "$src_data" "$dest_home/data" || rc=1
+  propagate_project_registry "$src_data" "$dest_home/data" || rc=1
   return "$rc"
 }
 
