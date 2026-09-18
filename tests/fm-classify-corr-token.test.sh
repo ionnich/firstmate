@@ -540,6 +540,56 @@ EOF
   pass "both real correlation-token writers produce lines this classifier reads through"
 }
 
+test_helper_key_flag_closes_a_keyed_decision() {
+  # Regression for the defect where a secondmate answering a KEYED escalation
+  # through this helper believed it closed the record while the open-decision
+  # set still carried it: the helper had no way to state a key at all, so its
+  # resolved line always folded to key "default", never the stated key.
+  local dir state verb rc
+  dir=$(make_case helper-key-flag)
+  state="$dir/state"
+  local parent mate
+  parent="$dir"
+  mate="$dir/mate"
+  mkdir -p "$mate/state"
+  printf 'keyclose\n' > "$mate/.fm-secondmate-home"
+  cat > "$mate/.fm-secondmate-parent" <<EOF
+schema=fm-secondmate-parent.v1
+route=local
+parent_home=$parent
+EOF
+
+  printf 'needs-decision [key=session-lock-bun]: which lock strategy\n' \
+    > "$state/keyclose.status"
+  [ -n "$(status_open_decisions "$state/keyclose.status")" ] \
+    || fail "setup did not open the keyed decision"
+
+  # Without --key the helper must NOT silently close the stated key: it may
+  # only close the unkeyed default bucket, exactly as before this change.
+  FM_HOME="$mate" "$REPORT" resolved "$CORR" "picked the bun-session lock" \
+    || fail "$REPORT failed without --key"
+  [ -n "$(status_open_decisions "$state/keyclose.status")" ] \
+    || fail "a resolved report with no --key silently closed the stated key"
+
+  # With the exact stated key, the same helper must close it for real.
+  FM_HOME="$mate" "$REPORT" --key session-lock-bun resolved "$CORR" \
+    "picked the bun-session lock" \
+    || fail "$REPORT failed with --key"
+  [ -z "$(status_open_decisions "$state/keyclose.status")" ] \
+    || fail "a --key resolved report did not close the stated keyed decision"
+  verb=$(status_line_verb "$(tail -1 "$state/keyclose.status")")
+  [ "$verb" = resolved ] \
+    || fail "the --key helper line is not read as a bare resolved verb (verb=[$verb])"
+
+  # A malformed key must refuse loudly rather than write a line that cannot
+  # close anything or open a decision under a bogus slug.
+  rc=0
+  FM_HOME="$mate" "$REPORT" --key 'bad key!' resolved "$CORR" "note" 2>/dev/null || rc=$?
+  [ "$rc" -ne 0 ] || fail "the helper accepted a malformed --key"
+
+  pass "the helper's --key flag closes the keyed decision it names and refuses a malformed key"
+}
+
 test_tokened_opener_opens_and_tokened_closer_closes
 test_token_is_read_through_in_every_position_it_is_written_in
 test_untokened_pair_is_unchanged
@@ -552,3 +602,4 @@ test_pending_reply_escalation_matching_is_unaffected
 test_incremental_and_whole_file_folds_agree_over_correlated_lines
 test_a_cursor_written_before_this_change_is_rebuilt
 test_the_real_writers_produce_tokens_this_library_reads
+test_helper_key_flag_closes_a_keyed_decision

@@ -15,11 +15,19 @@
 # set to that home.
 #
 # Usage:
-#   fm-secondmate-report.sh <verb> <corr_id> <note...>
-#   fm-secondmate-report.sh --doc <verb> <corr_id> <doc-path> <note...>
+#   fm-secondmate-report.sh [--key <slug>] <verb> <corr_id> <note...>
+#   fm-secondmate-report.sh [--key <slug>] --doc <verb> <corr_id> <doc-path> <note...>
+#
+# --key <slug> is required to close a decision that was opened with a stated
+# key (needs-decision [key=<slug>]: ... or blocked [key=<slug>]: ...); a
+# resolved line with no --key only closes the unkeyed "default" decision
+# (bin/fm-classify-lib.sh's status-fold contract), so answering a keyed record
+# through this helper without --key silently leaves it open. Pass the exact
+# slug named in the record you are answering; this helper never guesses it.
 #
 # Examples:
 #   fm-secondmate-report.sh done abcdef0123456789 "audit clean"
+#   fm-secondmate-report.sh --key session-lock-bun resolved abcdef0123456789 "rotated the lock"
 #   fm-secondmate-report.sh --doc done abcdef0123456789 data/x/report.md "see report"
 set -eu
 
@@ -33,16 +41,37 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 usage() {
   cat <<'EOF' >&2
 Usage:
-  fm-secondmate-report.sh <verb> <corr_id> <note...>
-  fm-secondmate-report.sh --doc <verb> <corr_id> <doc-path> <note...>
+  fm-secondmate-report.sh [--key <slug>] <verb> <corr_id> <note...>
+  fm-secondmate-report.sh [--key <slug>] --doc <verb> <corr_id> <doc-path> <note...>
 EOF
   exit 2
 }
 
 DOC_MODE=0
-if [ "${1:-}" = "--doc" ]; then
-  DOC_MODE=1
-  shift
+KEY=
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --doc) DOC_MODE=1; shift ;;
+    --key)
+      [ $# -ge 2 ] && [ -n "$2" ] || usage
+      KEY=$2
+      shift 2
+      ;;
+    *) break ;;
+  esac
+done
+# Same charset rule as fm-classify-lib.sh's _fm_decision_slug_ok and
+# fm-send.sh's --resolve-key (A-Za-z0-9._- only), stated inline rather than
+# sourcing the whole classify library into this small helper; the SHAPE is
+# deliberately duplicated here the same way bin/fm-classify-lib.sh already
+# duplicates the corr token shape, not a second interpretation of the fold.
+if [ -n "$KEY" ]; then
+  case "$KEY" in
+    *[!A-Za-z0-9._-]*)
+      echo "error: --key '$KEY' is not a valid decision key (allowed: A-Z a-z 0-9 . _ -)" >&2
+      exit 1
+      ;;
+  esac
 fi
 
 [ $# -ge 2 ] || usage
@@ -89,16 +118,18 @@ if [ ! -d "$(dirname "$DESTINATION")" ]; then
 fi
 
 token=$(fm_pending_reply_corr_token "$CORR")
+TAGS="[$token]"
+[ -n "$KEY" ] && TAGS="$TAGS [key=$KEY]"
 if [ "$DOC_MODE" = 1 ]; then
   DOC_PATH=$1
   shift
   NOTE=$*
   if [ -n "$NOTE" ]; then
-    printf '%s [%s]: %s (%s via-helper)\n' "$VERB" "$token" "$NOTE" "$DOC_PATH" >> "$DESTINATION"
+    printf '%s %s: %s (%s via-helper)\n' "$VERB" "$TAGS" "$NOTE" "$DOC_PATH" >> "$DESTINATION"
   else
-    printf '%s [%s]: %s (via-helper)\n' "$VERB" "$token" "$DOC_PATH" >> "$DESTINATION"
+    printf '%s %s: %s (via-helper)\n' "$VERB" "$TAGS" "$DOC_PATH" >> "$DESTINATION"
   fi
 else
   NOTE=$*
-  printf '%s [%s]: %s (via-helper)\n' "$VERB" "$token" "$NOTE" >> "$DESTINATION"
+  printf '%s %s: %s (via-helper)\n' "$VERB" "$TAGS" "$NOTE" >> "$DESTINATION"
 fi
