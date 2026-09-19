@@ -54,6 +54,7 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
+export FM_HOME
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 PROFILES_ROOT="${FM_PROFILES_ROOT_OVERRIDE:-$HOME/.local/share/firstmate/profiles}"
 FM_SEND="${FM_SEND_OVERRIDE:-$SCRIPT_DIR/fm-send.sh}"
@@ -175,16 +176,17 @@ trap 'rm -rf "$BACKUP_ROOT"' EXIT
 applied=""
 
 backup_profile() {  # <profile-npm-dir> <profile-name>
-  mkdir -p "$BACKUP_ROOT/$2"
-  cp "$1/package.json" "$BACKUP_ROOT/$2/package.json"
-  [ -f "$1/package-lock.json" ] && cp "$1/package-lock.json" "$BACKUP_ROOT/$2/package-lock.json"
-  return 0
+  mkdir -p "$BACKUP_ROOT/$2" || fail "could not create backup dir for $2"
+  cp "$1/package.json" "$BACKUP_ROOT/$2/package.json" || fail "could not back up $1/package.json"
+  if [ -f "$1/package-lock.json" ]; then
+    cp "$1/package-lock.json" "$BACKUP_ROOT/$2/package-lock.json" || fail "could not back up $1/package-lock.json"
+  fi
 }
 
 restore_profile() {  # <profile-npm-dir> <profile-name>
-  cp "$BACKUP_ROOT/$2/package.json" "$1/package.json"
+  cp "$BACKUP_ROOT/$2/package.json" "$1/package.json" || fail "could not restore $1/package.json from backup"
   if [ -f "$BACKUP_ROOT/$2/package-lock.json" ]; then
-    cp "$BACKUP_ROOT/$2/package-lock.json" "$1/package-lock.json"
+    cp "$BACKUP_ROOT/$2/package-lock.json" "$1/package-lock.json" || fail "could not restore $1/package-lock.json from backup"
   fi
 }
 
