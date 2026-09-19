@@ -61,7 +61,7 @@ fm_harness_path_name() {  # <path>
 #   4. Cursor's own structural identity, owned by bin/fm-cursor-lib.sh.
 FM_HARNESS_IS_CLAUDE=0
 fm_harness_process_matches() {  # <comm> <args>
-  local comm=$1 args=$2 base argv0 name
+  local comm=$1 args=$2 base argv0 argv1 name
   FM_HARNESS_IS_CLAUDE=0
   base=$(basename -- "$comm")
   if printf '%s' "$base" | grep -qE "$FM_HARNESS_RE"; then
@@ -74,8 +74,18 @@ fm_harness_process_matches() {  # <comm> <args>
     return 0
   fi
   # Bare interpreter (e.g. node): match the harness name in its script path.
-  case "$comm" in
-    *node*|*python*)
+  # bun shebang Pi reports comm=bun, not pi, and FM_HARNESS_RE anchors ^pi$
+  # so a full-argv grep would miss it; identify bun from the script path only.
+  case "$base" in
+    bun)
+      argv1=${args#* }
+      argv1=${argv1%% *}
+      if name=$(fm_harness_path_name "$argv1"); then
+        case "$name" in claude) FM_HARNESS_IS_CLAUDE=1 ;; esac
+        return 0
+      fi
+      ;;
+    node|nodejs|python|python[0-9]*)
       if printf '%s' "$args" | grep -qE "$FM_HARNESS_RE"; then
         case "$args" in *claude*) FM_HARNESS_IS_CLAUDE=1 ;; esac
         return 0

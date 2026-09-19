@@ -180,6 +180,66 @@ SH
   pass "session-lock: ordinary script paths under a harness directory are not harness processes"
 }
 
+test_exec_bridge_path_does_not_claim_pi_session_identity() {
+  local dir fakebin got harness comm args
+  dir="$TMP_ROOT/exec-bridge"
+  fakebin=$(fm_fakebin "$dir")
+  mkdir -p "$dir/state"
+  comm='/Users/nich/.pi/agent/npm/node_modules/@howaboua/pi-codex-conversion/src/tools/exec/bin/darwin-arm64/exec_bridge'
+  args="$comm codex --json"
+  cat > "$fakebin/ps" <<SH
+#!/usr/bin/env bash
+set -u
+field= pid=
+while [ "\$#" -gt 0 ]; do
+  case "\$1" in
+    -o) field=\$2; shift 2 ;;
+    -p) pid=\$2; shift 2 ;;
+    *) shift ;;
+  esac
+done
+case "\$pid:\$field" in
+  710:comm=) printf '%s\\n' '$comm' ;;
+  710:args=) printf '%s\\n' '$args' ;;
+  710:ppid=) printf '%s\\n' 720 ;;
+  720:comm=) printf '%s\\n' pi ;;
+  720:args=) printf '%s\\n' pi ;;
+  720:ppid=) printf '%s\\n' 1 ;;
+  *:comm=) printf '%s\\n' bash ;;
+  *:args=) printf '%s\\n' 'bash /repo/bin/fm-lock.sh' ;;
+  *:ppid=) printf '%s\\n' 710 ;;
+esac
+SH
+  chmod +x "$fakebin/ps"
+
+  got=$(lib_eval "$fakebin" 'fm_harness_ancestry_pid') \
+    || fail "a direct Pi session behind exec_bridge was not found"
+  [ "$got" = 720 ] \
+    || fail "session-lock selected transient exec_bridge pid '$got', expected direct Pi pid 720"
+  ! lib_eval "$fakebin" 'fm_harness_pid_alive 710' \
+    || fail "exec_bridge under node_modules was treated as a live harness"
+  lib_eval "$fakebin" 'fm_harness_pid_alive 720' \
+    || fail "direct Pi session lost its live-harness identity"
+
+  for harness in claude codex opencode grok kimi pi pi-signed omp; do
+    lib_eval "$fakebin" "fm_harness_process_matches '$harness' '$harness --resume'" \
+      || fail "supported harness '$harness' lost direct session identity"
+  done
+  for harness in claude codex opencode grok kimi; do
+    lib_eval "$fakebin" "fm_harness_process_matches node 'node /opt/$harness/session.js'" \
+      || fail "Node script for '$harness' lost session identity"
+    lib_eval "$fakebin" "fm_harness_process_matches python3 'python3 /opt/$harness/session.py'" \
+      || fail "Python script for '$harness' lost session identity"
+  done
+  lib_eval "$fakebin" "fm_harness_process_matches bun 'bun /opt/homebrew/bin/pi --tui-mode regular'" \
+    || fail "bun-wrapped Pi lost session identity"
+  ! lib_eval "$fakebin" "fm_harness_process_matches bun 'bun /usr/bin/true'" \
+    || fail "bare bun was treated as a live harness"
+  ! lib_eval "$fakebin" "fm_harness_process_matches bun 'bun /opt/x/node_modules/@howaboua/pi-codex-conversion/exec_bridge.js'" \
+    || fail "bun exec_bridge path was treated as a live harness"
+  pass "session-lock: exec_bridge cannot mask direct Pi while supported harness and interpreter identities remain live"
+}
+
 test_harness_beyond_a_gap_never_owns_the_lock() {
   local dir fakebin got
   dir="$TMP_ROOT/gap"
@@ -407,6 +467,7 @@ test_e2e_daemon_parented_version_named_session_keeps_its_lock() {
 test_version_named_session_is_identified_on_both_platforms
 test_harness_at_namespace_pid1_is_examined
 test_ordinary_paths_are_never_harness_processes
+test_exec_bridge_path_does_not_claim_pi_session_identity
 test_harness_beyond_a_gap_never_owns_the_lock
 test_competing_version_named_session_is_seen_as_live
 test_e2e_version_named_session_claims_the_home
