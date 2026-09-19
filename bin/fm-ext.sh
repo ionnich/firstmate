@@ -176,30 +176,36 @@ trap 'rm -rf "$BACKUP_ROOT"' EXIT
 applied=""
 
 backup_profile() {  # <profile-npm-dir> <profile-name>
-  mkdir -p "$BACKUP_ROOT/$2" || fail "could not create backup dir for $2"
-  cp "$1/package.json" "$BACKUP_ROOT/$2/package.json" || fail "could not back up $1/package.json"
+  mkdir -p "$BACKUP_ROOT/$2" || { printf 'fm-ext: could not create backup dir for %s\n' "$2" >&2; return 1; }
+  cp "$1/package.json" "$BACKUP_ROOT/$2/package.json" || { printf 'fm-ext: could not back up %s/package.json\n' "$1" >&2; return 1; }
   if [ -f "$1/package-lock.json" ]; then
-    cp "$1/package-lock.json" "$BACKUP_ROOT/$2/package-lock.json" || fail "could not back up $1/package-lock.json"
+    cp "$1/package-lock.json" "$BACKUP_ROOT/$2/package-lock.json" || { printf 'fm-ext: could not back up %s/package-lock.json\n' "$1" >&2; return 1; }
   fi
+  return 0
 }
 
 restore_profile() {  # <profile-npm-dir> <profile-name>
-  cp "$BACKUP_ROOT/$2/package.json" "$1/package.json" || fail "could not restore $1/package.json from backup"
+  cp "$BACKUP_ROOT/$2/package.json" "$1/package.json" || { printf 'fm-ext: could not restore %s/package.json from backup\n' "$1" >&2; return 1; }
   if [ -f "$BACKUP_ROOT/$2/package-lock.json" ]; then
-    cp "$BACKUP_ROOT/$2/package-lock.json" "$1/package-lock.json" || fail "could not restore $1/package-lock.json from backup"
+    cp "$BACKUP_ROOT/$2/package-lock.json" "$1/package-lock.json" || { printf 'fm-ext: could not restore %s/package-lock.json from backup\n' "$1" >&2; return 1; }
   fi
+  return 0
 }
 
 rollback_all() {
-  local rp
+  local rp rc=0
   for rp in $applied; do
-    restore_profile "$(profile_npm_dir "$rp")" "$rp"
+    restore_profile "$(profile_npm_dir "$rp")" "$rp" || rc=1
   done
+  return $rc
 }
 
 for p in $targets; do
   dir=$(profile_npm_dir "$p")
-  backup_profile "$dir" "$p"
+  backup_profile "$dir" "$p" || {
+    rollback_all
+    fail "could not back up $p profile ($dir) before npm $ACTION; reverted every profile already applied this run ($applied)"
+  }
   if [ "$ACTION" = install ]; then
     npm_out=$(cd "$dir" && npm install "$PKG" --save 2>&1)
   else
@@ -208,8 +214,8 @@ for p in $targets; do
   npm_rc=$?
   if [ "$npm_rc" -ne 0 ]; then
     printf '%s\n' "$npm_out" >&2
-    restore_profile "$dir" "$p"
-    rollback_all
+    restore_profile "$dir" "$p" || printf 'fm-ext: could not revert %s profile (%s); it may be left in a partially-changed state\n' "$p" "$dir" >&2
+    rollback_all || printf 'fm-ext: reverting one or more already-applied profiles failed; check them manually\n' >&2
     fail "npm $ACTION failed in $p profile ($dir); reverted $p and every profile already applied this run ($applied)"
   fi
   applied="$applied $p"
