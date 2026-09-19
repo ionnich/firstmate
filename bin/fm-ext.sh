@@ -203,7 +203,7 @@ rollback_all() {
 for p in $targets; do
   dir=$(profile_npm_dir "$p")
   backup_profile "$dir" "$p" || {
-    rollback_all
+    rollback_all || printf 'fm-ext: reverting one or more already-applied profiles failed; check them manually\n' >&2
     fail "could not back up $p profile ($dir) before npm $ACTION; reverted every profile already applied this run ($applied)"
   }
   if [ "$ACTION" = install ]; then
