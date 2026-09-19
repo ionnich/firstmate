@@ -65,6 +65,7 @@ exit 0
 SH
   chmod +x "$w/fakebin/fm-send.sh"
   cp "$EXT" "$w/fakebin/fm-ext.sh"
+  cp "$ROOT/bin/fm-wake-lib.sh" "$w/fakebin/fm-wake-lib.sh"
   printf '%s\n' "$w"
 }
 
@@ -216,3 +217,23 @@ wait "$alpha_pid" || fail "first concurrent install should succeed"
 wait "$beta_pid" || fail "second concurrent install should succeed"
 assert_equals no "$beta_started" "second install waits for first transaction"
 pass "concurrent installs serialize profile transactions"
+
+w=$(make_world)
+mkdir "$w/profiles/.fm-ext.lock"
+touch -t 200001010000 "$w/profiles/.fm-ext.lock"
+run_ext "$w" install newpkg >/dev/null 2>&1 &
+stale_lock_pid=$!
+for _ in $(seq 1 50); do
+  kill -0 "$stale_lock_pid" 2>/dev/null || break
+  sleep 0.01
+done
+if kill -0 "$stale_lock_pid" 2>/dev/null; then
+  stale_lock_recovered=no
+  kill "$stale_lock_pid" 2>/dev/null || true
+  wait "$stale_lock_pid" 2>/dev/null || true
+else
+  wait "$stale_lock_pid" || fail "stale profile lock recovery should succeed"
+  stale_lock_recovered=yes
+fi
+assert_equals yes "$stale_lock_recovered" "stale profile lock is reclaimed"
+pass "stale profile lock does not block extension installs"

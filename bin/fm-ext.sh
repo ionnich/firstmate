@@ -175,13 +175,11 @@ fi
 
 # --- apply, with whole-set rollback on any profile failure ------------------
 
+. "$SCRIPT_DIR/fm-wake-lib.sh"
 LOCK_DIR="$PROFILES_ROOT/.fm-ext.lock"
-while ! mkdir "$LOCK_DIR" 2>/dev/null; do
-  [ -d "$LOCK_DIR" ] || fail "could not acquire profile transaction lock"
-  sleep 0.1
-done
+fm_lock_acquire_wait "$LOCK_DIR" || fail "could not acquire profile transaction lock"
 BACKUP_ROOT=
-trap 'rm -rf "${BACKUP_ROOT:-}"; rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
+trap 'rm -rf "${BACKUP_ROOT:-}"; fm_lock_release "$LOCK_DIR" || true' EXIT
 BACKUP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/fm-ext.XXXXXX") || fail "could not create backup dir"
 
 applied=""
