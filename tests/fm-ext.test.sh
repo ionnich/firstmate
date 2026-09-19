@@ -36,6 +36,15 @@ if [ -n "${FM_TEST_NPM_FAIL_IN:-}" ] && [[ "$(pwd)" == *"$FM_TEST_NPM_FAIL_IN"* 
   echo "fake npm failure" >&2
   exit 1
 fi
+for arg in "$@"; do
+  if [ "$arg" = "${FM_TEST_NPM_BLOCK_PACKAGE:-}" ] && [[ "$(pwd)" == *"${FM_TEST_NPM_BLOCK_IN:-}"* ]]; then
+    : > "$FM_TEST_NPM_BLOCKED"
+    while [ ! -e "$FM_TEST_NPM_RELEASE" ]; do sleep 0.01; done
+  fi
+  if [ "$arg" = beta ] && [ -n "${FM_TEST_NPM_BETA_STARTED:-}" ]; then
+    : > "$FM_TEST_NPM_BETA_STARTED"
+  fi
+done
 case "$1" in
   install)
     echo '{"name":"pi-extensions","private":true,"dependencies":{"pi-existing":"^1.0.0","newpkg":"^1.0.0"}}' > package.json
@@ -75,7 +84,7 @@ w=$(make_world)
 out=$(run_ext "$w" install newpkg --dry-run) || fail "dry-run install should exit 0"
 assert_contains "$out" "resident/npm" "dry-run mentions resident profile"
 assert_contains "$out" "crew/npm" "dry-run mentions crew profile"
-assert_contains "$out" "would run: npm install newpkg --save" "dry-run states the exact command"
+assert_contains "$out" "would run: npm install --save -- newpkg" "dry-run states the exact command"
 assert_equals "$PKG_JSON" "$(cat "$w/profiles/resident/npm/package.json")" "dry-run leaves resident package.json untouched"
 assert_equals "$PKG_JSON" "$(cat "$w/profiles/crew/npm/package.json")" "dry-run leaves crew package.json untouched"
 pass "dry-run reports intent and writes nothing"
@@ -162,3 +171,48 @@ run_ext "$w" install newpkg --dry-run >/dev/null 2>&1
 rc=$?
 assert_not_equals 0 "$rc" "dry-run rejects unreadable package manifests"
 pass "dry-run refuses malformed package manifests"
+
+# --- 7. option-like package arguments never reach npm -----------------------
+
+w=$(make_world)
+run_ext "$w" install --package-lock-only >/dev/null 2>&1
+rc=$?
+assert_not_equals 0 "$rc" "option-like package is refused"
+assert_equals "$PKG_JSON" "$(cat "$w/profiles/resident/npm/package.json")" \
+  "option-like package leaves resident untouched"
+assert_equals "$PKG_JSON" "$(cat "$w/profiles/crew/npm/package.json")" \
+  "option-like package leaves crew untouched"
+pass "option-like package arguments are refused before npm"
+
+# --- 8. concurrent applies serialize the full profile transaction ------------
+
+w=$(make_world)
+FM_TEST_NPM_BLOCK_PACKAGE=alpha \
+  FM_TEST_NPM_BLOCK_IN=resident/npm \
+  FM_TEST_NPM_BLOCKED="$w/blocked" \
+  FM_TEST_NPM_RELEASE="$w/release" \
+  FM_TEST_NPM_BETA_STARTED="$w/beta-started" \
+  run_ext "$w" install alpha >/dev/null 2>&1 &
+alpha_pid=$!
+while [ ! -e "$w/blocked" ]; do sleep 0.01; done
+FM_TEST_NPM_BLOCK_PACKAGE=alpha \
+  FM_TEST_NPM_BLOCK_IN=resident/npm \
+  FM_TEST_NPM_BLOCKED="$w/blocked" \
+  FM_TEST_NPM_RELEASE="$w/release" \
+  FM_TEST_NPM_BETA_STARTED="$w/beta-started" \
+  run_ext "$w" install beta >/dev/null 2>&1 &
+beta_pid=$!
+for _ in $(seq 1 50); do
+  [ -e "$w/beta-started" ] && break
+  sleep 0.01
+done
+if [ -e "$w/beta-started" ]; then
+  beta_started=yes
+else
+  beta_started=no
+fi
+: > "$w/release"
+wait "$alpha_pid" || fail "first concurrent install should succeed"
+wait "$beta_pid" || fail "second concurrent install should succeed"
+assert_equals no "$beta_started" "second install waits for first transaction"
+pass "concurrent installs serialize profile transactions"

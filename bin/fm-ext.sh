@@ -88,6 +88,9 @@ esac
 PKG=$1
 shift
 [ -n "$PKG" ] || fail "package name required"
+case "$PKG" in
+  -*) fail "package name cannot start with '-': $PKG" ;;
+esac
 
 SCOPE=both
 DRY_RUN=0
@@ -160,10 +163,10 @@ if [ "$DRY_RUN" = 1 ]; then
       *) fail "could not read package.json in $dir" ;;
     esac
     if [ "$ACTION" = install ]; then
-      printf 'dry-run: %s currently present=%s; would run: npm install %s --save (in %s)\n' \
+      printf 'dry-run: %s currently present=%s; would run: npm install --save -- %s (in %s)\n' \
         "$NAME" "$present" "$PKG" "$dir"
     else
-      printf 'dry-run: %s currently present=%s; would run: npm uninstall %s --save (in %s)\n' \
+      printf 'dry-run: %s currently present=%s; would run: npm uninstall --save -- %s (in %s)\n' \
         "$NAME" "$present" "$PKG" "$dir"
     fi
   done
@@ -172,8 +175,14 @@ fi
 
 # --- apply, with whole-set rollback on any profile failure ------------------
 
+LOCK_DIR="$PROFILES_ROOT/.fm-ext.lock"
+while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+  [ -d "$LOCK_DIR" ] || fail "could not acquire profile transaction lock"
+  sleep 0.1
+done
+BACKUP_ROOT=
+trap 'rm -rf "${BACKUP_ROOT:-}"; rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
 BACKUP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/fm-ext.XXXXXX") || fail "could not create backup dir"
-trap 'rm -rf "$BACKUP_ROOT"' EXIT
 
 applied=""
 
@@ -203,9 +212,9 @@ for p in $targets; do
     fail "could not back up $p profile ($dir) before npm $ACTION; one or more profiles may be partially changed; check them manually"
   }
   if [ "$ACTION" = install ]; then
-    npm_out=$(cd "$dir" && npm install "$PKG" --save 2>&1)
+    npm_out=$(cd "$dir" && npm install --save -- "$PKG" 2>&1)
   else
-    npm_out=$(cd "$dir" && npm uninstall "$NAME" --save 2>&1)
+    npm_out=$(cd "$dir" && npm uninstall --save -- "$NAME" 2>&1)
   fi
   npm_rc=$?
   if [ "$npm_rc" -ne 0 ]; then
