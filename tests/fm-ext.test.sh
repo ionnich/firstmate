@@ -155,3 +155,10 @@ printf '%s' '{"name":"pi-extensions","private":true,"dependencies":{"foo-bar":"^
 out=$(run_ext "$w" install foo.bar --dry-run) || fail "dry-run exact dependency lookup should exit 0"
 assert_contains "$out" "foo.bar currently present=no" "dry-run uses exact package key lookup"
 pass "dry-run distinguishes punctuation in package names"
+
+w=$(make_world)
+printf '%s' '{not json' > "$w/profiles/resident/npm/package.json"
+run_ext "$w" install newpkg --dry-run >/dev/null 2>&1
+rc=$?
+assert_not_equals 0 "$rc" "dry-run rejects unreadable package manifests"
+pass "dry-run refuses malformed package manifests"

@@ -134,7 +134,7 @@ for p in $targets; do
 done
 
 pkg_present() {  # <profile-npm-dir> <bare-name>
-  node -e 'const p = require(process.argv[1]); process.exit(Object.hasOwn(p.dependencies || {}, process.argv[2]) ? 0 : 1)' \
+  node -e 'const fs = require("fs"); let p; try { p = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); } catch { process.exit(2); } process.exit(Object.hasOwn(p.dependencies || {}, process.argv[2]) ? 0 : 1)' \
     "$1/package.json" "$2"
 }
 
@@ -153,7 +153,12 @@ NAME=$(bare_name "$PKG")
 if [ "$DRY_RUN" = 1 ]; then
   for p in $targets; do
     dir=$(profile_npm_dir "$p")
-    if pkg_present "$dir" "$NAME"; then present=yes; else present=no; fi
+    pkg_present "$dir" "$NAME"
+    case $? in
+      0) present=yes ;;
+      1) present=no ;;
+      *) fail "could not read package.json in $dir" ;;
+    esac
     if [ "$ACTION" = install ]; then
       printf 'dry-run: %s currently present=%s; would run: npm install %s --save (in %s)\n' \
         "$NAME" "$present" "$PKG" "$dir"
