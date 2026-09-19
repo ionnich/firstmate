@@ -23,7 +23,8 @@ PKG_JSON='{"name":"pi-extensions","private":true,"dependencies":{"pi-existing":"
 
 make_world() {  # -> echoes world dir
   local w="$TMP_ROOT/world-$RANDOM"
-  mkdir -p "$w/profiles/resident/npm" "$w/profiles/crew/npm" "$w/home/state" "$w/fakebin"
+  mkdir -p "$w/.local/share/firstmate/profiles/resident/npm" "$w/.local/share/firstmate/profiles/crew/npm" "$w/home/state" "$w/fakebin"
+  ln -s .local/share/firstmate/profiles "$w/profiles"
   printf '%s' "$PKG_JSON" > "$w/profiles/resident/npm/package.json"
   printf '%s' "$PKG_JSON" > "$w/profiles/crew/npm/package.json"
   echo '{}' > "$w/profiles/resident/npm/package-lock.json"
@@ -38,9 +39,11 @@ fi
 case "$1" in
   install)
     echo '{"name":"pi-extensions","private":true,"dependencies":{"pi-existing":"^1.0.0","newpkg":"^1.0.0"}}' > package.json
+    mkdir -p node_modules/newpkg
     ;;
   uninstall)
     echo '{"name":"pi-extensions","private":true,"dependencies":{}}' > package.json
+    rm -rf node_modules/pi-existing
     ;;
 esac
 exit 0
@@ -52,6 +55,7 @@ echo "$1" >> "$FM_TEST_SEND_LOG"
 exit 0
 SH
   chmod +x "$w/fakebin/fm-send.sh"
+  cp "$EXT" "$w/fakebin/fm-ext.sh"
   printf '%s\n' "$w"
 }
 
@@ -59,11 +63,10 @@ run_ext() {  # <world> <fm-ext args...>
   local w=$1
   shift
   PATH="$w/fakebin:$PATH" \
+    HOME="$w" \
     FM_HOME="$w/home" \
-    FM_PROFILES_ROOT_OVERRIDE="$w/profiles" \
-    FM_SEND_OVERRIDE="$w/fakebin/fm-send.sh" \
     FM_TEST_SEND_LOG="$w/sendlog" \
-    bash "$EXT" "$@"
+    bash "$w/fakebin/fm-ext.sh" "$@"
 }
 
 # --- 1. dry-run writes nothing, reports both profiles ------------------------
@@ -103,6 +106,8 @@ assert_equals "$PKG_JSON" "$(cat "$w/profiles/resident/npm/package.json")" \
   "resident reverted after crew's npm call failed"
 assert_equals "$PKG_JSON" "$(cat "$w/profiles/crew/npm/package.json")" \
   "crew left at its pre-failure state"
+[ ! -e "$w/profiles/resident/npm/node_modules/newpkg" ] \
+  || fail "resident installed tree was not reverted after crew's npm call failed"
 pass "one profile's npm failure rolls back every profile applied this run"
 
 # --- 5. remove refuses a version-spec argument --------------------------------
@@ -126,6 +131,12 @@ harness=pi
 kind=secondmate
 endpoint_task_id=mgr-x
 EOF
+cat > "$w/home/state/remote-mgr.meta" <<'EOF'
+harness=pi
+kind=secondmate
+endpoint_task_id=remote-mgr
+remote_host=example.test
+EOF
 cat > "$w/home/state/other-harness.meta" <<'EOF'
 harness=claude
 kind=ship
@@ -135,5 +146,12 @@ EOF
 run_ext "$w" install newpkg >/dev/null || fail "install with meta records present should exit 0"
 assert_grep crewtask "$w/sendlog" "crew-scoped ship task nudged"
 assert_grep mgr-x "$w/sendlog" "resident-scoped secondmate nudged"
+assert_no_grep remote-mgr "$w/sendlog" "remote secondmate never nudged"
 assert_no_grep other-harness "$w/sendlog" "non-pi harness session never nudged"
 pass "successful apply nudges every live harness=pi session touched by the change"
+
+w=$(make_world)
+printf '%s' '{"name":"pi-extensions","private":true,"dependencies":{"foo-bar":"^1.0.0"}}' > "$w/profiles/resident/npm/package.json"
+out=$(run_ext "$w" install foo.bar --dry-run) || fail "dry-run exact dependency lookup should exit 0"
+assert_contains "$out" "foo.bar currently present=no" "dry-run uses exact package key lookup"
+pass "dry-run distinguishes punctuation in package names"

@@ -17,12 +17,11 @@
 # only ever needs the name, and accepting one here would just be a second,
 # unused way to spell the same request.
 #
-# Atomicity: before mutating a profile's npm project this backs up its
-# package.json and package-lock.json. If one profile's `npm install` or
-# `npm uninstall` fails, that profile is restored from its backup and any
-# profile already applied earlier in the same call is restored too, so a run
-# never leaves one profile changed and the other not; nothing is committed to
-# either profile unless every selected profile succeeds.
+# Rollback: before mutating a profile's npm project this backs up its complete
+# npm directory. If one profile's `npm install` or `npm uninstall` fails, that
+# profile and every profile already applied earlier in the same call are
+# restored from those backups. A restore failure is reported as potentially
+# partial rather than claimed successful.
 #
 # --dry-run reports the exact npm command each selected profile would run and
 # whether the package is currently present, without invoking npm and without
@@ -31,8 +30,8 @@
 # Reload nudge: after a successful (non-dry-run) apply, this reads
 # state/*.meta in $FM_HOME for harness=pi records. A record with kind=secondmate
 # uses the resident profile; every other kind uses the crew profile. For each
-# live record whose profile was just changed, this sends one durable steering
-# message through fm-send.sh (local and remote alike) asking that session to
+# local live record whose profile was just changed, this sends one durable
+# steering message through fm-send.sh asking that session to
 # call its own `pi_extension_dev_reload_self` tool - the native in-place
 # reload - when convenient. That is advisory only: a send failure is reported
 # but does not fail the overall command, since the install or removal itself
@@ -47,8 +46,6 @@
 # Environment:
 #   FM_HOME                 operational home whose state/ is scanned for
 #                            sessions to nudge. Default: this repo's root.
-#   FM_PROFILES_ROOT_OVERRIDE  root containing resident/ and crew/ profile
-#                            dirs. Default: ~/.local/share/firstmate/profiles.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -56,8 +53,8 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 export FM_HOME
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-PROFILES_ROOT="${FM_PROFILES_ROOT_OVERRIDE:-$HOME/.local/share/firstmate/profiles}"
-FM_SEND="${FM_SEND_OVERRIDE:-$SCRIPT_DIR/fm-send.sh}"
+PROFILES_ROOT="$HOME/.local/share/firstmate/profiles"
+FM_SEND="$SCRIPT_DIR/fm-send.sh"
 
 fail() {
   printf 'fm-ext: %s\n' "$*" >&2
@@ -118,6 +115,7 @@ if [ "$ACTION" = remove ]; then
 fi
 
 command -v npm >/dev/null 2>&1 || fail "npm not found on PATH"
+command -v node >/dev/null 2>&1 || fail "node not found on PATH"
 
 profile_npm_dir() {  # <resident|crew>
   printf '%s/%s/npm' "$PROFILES_ROOT" "$1"
@@ -136,9 +134,8 @@ for p in $targets; do
 done
 
 pkg_present() {  # <profile-npm-dir> <bare-name>
-  # Cheap membership check against package.json's dependency block; avoids a
-  # jq dependency for a single boolean.
-  grep -q "\"$2\"[[:space:]]*:" "$1/package.json"
+  node -e 'const p = require(process.argv[1]); process.exit(Object.hasOwn(p.dependencies || {}, process.argv[2]) ? 0 : 1)' \
+    "$1/package.json" "$2"
 }
 
 bare_name() {  # <spec> -> name with any @version stripped
@@ -176,20 +173,12 @@ trap 'rm -rf "$BACKUP_ROOT"' EXIT
 applied=""
 
 backup_profile() {  # <profile-npm-dir> <profile-name>
-  mkdir -p "$BACKUP_ROOT/$2" || { printf 'fm-ext: could not create backup dir for %s\n' "$2" >&2; return 1; }
-  cp "$1/package.json" "$BACKUP_ROOT/$2/package.json" || { printf 'fm-ext: could not back up %s/package.json\n' "$1" >&2; return 1; }
-  if [ -f "$1/package-lock.json" ]; then
-    cp "$1/package-lock.json" "$BACKUP_ROOT/$2/package-lock.json" || { printf 'fm-ext: could not back up %s/package-lock.json\n' "$1" >&2; return 1; }
-  fi
-  return 0
+  cp -a "$1" "$BACKUP_ROOT/$2" || { printf 'fm-ext: could not back up %s\n' "$1" >&2; return 1; }
 }
 
 restore_profile() {  # <profile-npm-dir> <profile-name>
-  cp "$BACKUP_ROOT/$2/package.json" "$1/package.json" || { printf 'fm-ext: could not restore %s/package.json from backup\n' "$1" >&2; return 1; }
-  if [ -f "$BACKUP_ROOT/$2/package-lock.json" ]; then
-    cp "$BACKUP_ROOT/$2/package-lock.json" "$1/package-lock.json" || { printf 'fm-ext: could not restore %s/package-lock.json from backup\n' "$1" >&2; return 1; }
-  fi
-  return 0
+  rm -rf "$1" || { printf 'fm-ext: could not clear %s before restore\n' "$1" >&2; return 1; }
+  cp -a "$BACKUP_ROOT/$2" "$1" || { printf 'fm-ext: could not restore %s from backup\n' "$1" >&2; return 1; }
 }
 
 rollback_all() {
@@ -203,8 +192,10 @@ rollback_all() {
 for p in $targets; do
   dir=$(profile_npm_dir "$p")
   backup_profile "$dir" "$p" || {
-    rollback_all || printf 'fm-ext: reverting one or more already-applied profiles failed; check them manually\n' >&2
-    fail "could not back up $p profile ($dir) before npm $ACTION; reverted every profile already applied this run ($applied)"
+    if rollback_all; then
+      fail "could not back up $p profile ($dir) before npm $ACTION; reverted every profile already applied this run ($applied)"
+    fi
+    fail "could not back up $p profile ($dir) before npm $ACTION; one or more profiles may be partially changed; check them manually"
   }
   if [ "$ACTION" = install ]; then
     npm_out=$(cd "$dir" && npm install "$PKG" --save 2>&1)
@@ -214,9 +205,13 @@ for p in $targets; do
   npm_rc=$?
   if [ "$npm_rc" -ne 0 ]; then
     printf '%s\n' "$npm_out" >&2
-    restore_profile "$dir" "$p" || printf 'fm-ext: could not revert %s profile (%s); it may be left in a partially-changed state\n' "$p" "$dir" >&2
-    rollback_all || printf 'fm-ext: reverting one or more already-applied profiles failed; check them manually\n' >&2
-    fail "npm $ACTION failed in $p profile ($dir); reverted $p and every profile already applied this run ($applied)"
+    rollback_rc=0
+    restore_profile "$dir" "$p" || rollback_rc=1
+    rollback_all || rollback_rc=1
+    if [ "$rollback_rc" -eq 0 ]; then
+      fail "npm $ACTION failed in $p profile ($dir); reverted $p and every profile already applied this run ($applied)"
+    fi
+    fail "npm $ACTION failed in $p profile ($dir); one or more profiles may be partially changed; check them manually"
   fi
   applied="$applied $p"
 done
@@ -242,6 +237,7 @@ if [ -d "$STATE" ]; then
   for meta in "$STATE"/*.meta; do
     [ -f "$meta" ] || continue
     [ "$(meta_get "$meta" harness)" = pi ] || continue
+    [ -z "$(meta_get "$meta" remote_host)" ] || continue
     if [ "$(meta_get "$meta" kind)" = secondmate ]; then
       mprofile=resident
     else

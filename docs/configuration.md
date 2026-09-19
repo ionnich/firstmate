@@ -562,7 +562,7 @@ A budget that is not a whole number from 1 to 120 is still refused outright.
 ## Pi extension install across profiles (bin/fm-ext.sh)
 
 The resident Pi profile (`~/.local/share/firstmate/profiles/resident`, used by the primary home and every persistent secondmate home) and the crew profile (`~/.local/share/firstmate/profiles/crew`, used by crewmates and scouts) each carry their own runtime-owned `npm/package.json`, not managed by Nix.
-[`bin/fm-ext.sh`](../bin/fm-ext.sh) installs or removes one extension package in both in a single call, with `--dry-run`, `--resident-only`/`--crew-only` scoping, and atomic all-or-nothing apply; its own header is the single owner of usage, atomicity, and the reload-nudge mechanics.
+[`bin/fm-ext.sh`](../bin/fm-ext.sh) installs or removes one extension package in both in a single call, with `--dry-run`, `--resident-only`/`--crew-only` scoping, and whole-profile rollback on a failed npm invocation; its own header is the single owner of usage, rollback, and reload-nudge mechanics.
 
 ## Mail plane (.env)
 
