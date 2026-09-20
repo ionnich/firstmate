@@ -910,6 +910,20 @@ require_away_merge_grant() {
   return 1
 }
 
+require_autonomous_dispatch_grant() {
+  local generation grant
+  generation=$MERGE_EXPECTED_SPAWN_GEN
+  [ -n "$generation" ] || return 1
+  grant=$(FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-autonomous-dispatch.sh" member \
+    --home "$FM_HOME" --task "$ID" --spawn-gen "$generation" --action merge 2>/dev/null) || return 1
+  [ "$grant" = grant ] || return 1
+  [ "${#ALLOW_RED[@]}" -eq 0 ] || {
+    echo "error: --allow-red is never authorized by an autonomous dispatch" >&2
+    return 2
+  }
+  FM_PR_MERGE_AUTHORITY="autonomous-dispatch"
+}
+
 # Take the away record's own lock (bin/fm-afk-contract.sh owns it) so that
 # record cannot be published, replaced, or archived between the authority read
 # below and the forge command that acts on it. Refuses without the lock: a merge
@@ -937,7 +951,7 @@ require_current_away_authority() {
       return 2
     fi
   fi
-  require_away_merge_grant || return 1
+  require_autonomous_dispatch_grant || require_away_merge_grant || return 1
   if [ "$FM_PR_AWAY_POSTURE" = true ] && [ "${#ALLOW_RED[@]}" -gt 0 ]; then
     echo "error: --allow-red is attended-only; while the away-posture record exists the green check is absolute" >&2
     return 2
