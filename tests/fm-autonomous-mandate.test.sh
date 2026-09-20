@@ -72,7 +72,28 @@ test_revoke_removes_active_authority() {
   pass 'revocation removes active authority without touching task work'
 }
 
+test_root_symlink_and_excluded_action_refuse() {
+  local home="$TMP_ROOT/home-root" outside="$TMP_ROOT/outside" file="$TMP_ROOT/root.json" out
+  make_home "$home"
+  proposal "$file" "$home"
+  rm -rf "$home/data/autonomous-mandates"
+  mkdir -p "$outside"
+  ln -s "$outside" "$home/data/autonomous-mandates"
+  if out=$(FM_HOME="$home" "$MANDATE" propose --proposal "$file" 2>&1); then
+    fail "symlinked mandate root passed: $out"
+  fi
+  rm "$home/data/autonomous-mandates"
+  make_home "$home"
+  FM_HOME="$home" "$MANDATE" propose --proposal "$file" >/dev/null
+  FM_HOME="$home" "$MANDATE" confirm --id amd-test >/dev/null
+  FM_HOME="$home" "$MANDATE" launch-receipt --id amd-test --member member-a --spawn-gen s1 >/dev/null
+  out=$(FM_HOME="$home" "$MANDATE" query --home "$home" --task task-a --spawn-gen s1 --action credential)
+  printf '%s' "$out" | jq -e '.result == "deny"' >/dev/null || fail "excluded action granted: $out"
+  pass 'unsafe mandate root and excluded action refuse'
+}
+
 test_propose_and_query_are_fail_closed
 test_rejects_duplicate_members_and_unknown_environment_partition
 test_confirm_receipt_and_authorize_deployment
 test_revoke_removes_active_authority
+test_root_symlink_and_excluded_action_refuse

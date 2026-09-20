@@ -40,7 +40,13 @@ release_lock() {
 trap release_lock EXIT
 require_primary_writer() { [ "$caller_home" = "$home" ] || die 'only primary home may mutate mandates'; }
 acquire_lock() {
-  [ -d "$root" ] && [ ! -L "$root" ] || mkdir -p "$root/archive" || die 'cannot create mandate directory'
+  if [ -e "$root" ] || [ -L "$root" ]; then
+    [ -d "$root" ] && [ ! -L "$root" ] || die 'invalid mandate directory'
+  else
+    mkdir -p "$root" || die 'cannot create mandate directory'
+  fi
+  [ -d "$root" ] && [ ! -L "$root" ] || die 'invalid mandate directory'
+  mkdir -p "$root/archive" || die 'cannot create mandate archive directory'
   [ -d "$root/archive" ] && [ ! -L "$root/archive" ] || die 'invalid mandate archive directory'
   fm_lock_acquire_wait "$lock" || die 'cannot lock mandate'
   lock_held=1
@@ -101,6 +107,7 @@ record_for_id() {
 query() {
   local request_home=$1 task=$2 generation=$3 action=$4 environment=${5:-} file now
   [ "$request_home" = "$caller_home" ] || { result unavailable 'caller home mismatch'; return; }
+  case "$action" in decision|merge|deploy) ;; *) result deny 'action is permanently excluded'; return ;; esac
   [ "${FM_AUTONOMOUS_MANDATE_LOCK_HELD:-}" = 1 ] || acquire_lock
   file=$(active_file)
   [ -f "$file" ] && [ ! -L "$file" ] || { result unavailable 'no active mandate'; return; }
@@ -138,7 +145,9 @@ case "$cmd" in
   launch-receipt)
     if [ "${1:-}" != --id ] || [ "${3:-}" != --member ] || [ "${5:-}" != --spawn-gen ] || [ -z "${2:-}" ] || [ -z "${4:-}" ] || [ -z "${6:-}" ]; then die 'usage: launch-receipt --id ID --member ID --spawn-gen GEN'; fi
     id=$2 member=$4 generation=$6
-    safe_id "$id" && safe_id "$member" && safe_id "$generation" || die 'invalid receipt identity'
+    if ! safe_id "$id" || ! safe_id "$member" || ! safe_id "$generation"; then
+      die 'invalid receipt identity'
+    fi
     require_primary_writer
     acquire_lock
     file=$(record_for_id "$id") || die "unknown mandate: $id"
@@ -152,7 +161,9 @@ case "$cmd" in
     ;;
   validate-member)
     if [ "${1:-}" != --id ] || [ "${3:-}" != --member ] || [ "${5:-}" != --home ] || [ "${7:-}" != --task ] || [ "${9:-}" != --mode ] || [ "${11:-}" != --project ]; then die 'usage: validate-member --id ID --member ID --home HOME --task ID --mode MODE --project PATH'; fi
-    safe_id "$2" && safe_id "$4" || die 'invalid mandate identity'
+    if ! safe_id "$2" || ! safe_id "$4"; then
+      die 'invalid mandate identity'
+    fi
     acquire_lock
     file=$(activating_file)
     if [ ! -f "$file" ] || ! jq -e --arg id "$2" --arg member "$4" --arg home "$6" --arg task "$8" --arg mode "${10}" --arg project "${12}" '.id == $id and (.members[] | select(.id == $member and .home == $home and .task_id == $task and .mode == $mode and .project == $project))' "$file" >/dev/null; then die 'reviewed mandate member mismatch'; fi
