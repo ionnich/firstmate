@@ -47,6 +47,10 @@ test_confirm_receipt_and_authorize_deployment() {
   proposal "$file" "$home"
   FM_HOME="$home" "$MANDATE" propose --proposal "$file" >/dev/null
   FM_HOME="$home" "$MANDATE" confirm --id amd-test >/dev/null
+  FM_HOME="$home" "$MANDATE" validate-member --id amd-test --member member-a --home "$home" --task task-a --mode no-mistakes --project /project >/dev/null
+  if FM_HOME="$home" "$MANDATE" validate-member --id amd-test --member member-a --home "$home" --task task-b --mode no-mistakes --project /project >/dev/null 2>&1; then
+    fail 'reviewed member validation accepted a different task'
+  fi
   FM_HOME="$home" "$MANDATE" launch-receipt --id amd-test --member member-a --spawn-gen s1 >/dev/null
   out=$(FM_HOME="$home" "$MANDATE" authorize-deployment --home "$home" --task task-a --spawn-gen s1 --environment production)
   printf '%s' "$out" | jq -e '.result == "grant"' >/dev/null || fail "reviewed deployment must grant: $out"

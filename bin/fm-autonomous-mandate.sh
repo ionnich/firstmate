@@ -3,6 +3,7 @@
 # Usage: fm-autonomous-mandate.sh propose --proposal FILE
 #        fm-autonomous-mandate.sh confirm --id ID
 #        fm-autonomous-mandate.sh launch-receipt --id ID --member ID --spawn-gen GEN
+#        fm-autonomous-mandate.sh validate-member --id ID --member ID --home HOME --task ID --mode MODE --project PATH
 #        fm-autonomous-mandate.sh revoke --id ID
 #        fm-autonomous-mandate.sh archive --id ID
 #        fm-autonomous-mandate.sh status
@@ -108,6 +109,12 @@ case "$cmd" in
     mv "$tmp" "$file"
     if jq -e 'all(.members[]; (.spawn_gen|type == "string" and length > 0))' "$file" >/dev/null; then mv "$file" "$(active_file)"; fi
     printf 'receipt: %s %s\n' "$member" "$generation"
+    ;;
+  validate-member)
+    if [ "${1:-}" != --id ] || [ "${3:-}" != --member ] || [ "${5:-}" != --home ] || [ "${7:-}" != --task ] || [ "${9:-}" != --mode ] || [ "${11:-}" != --project ]; then die 'usage: validate-member --id ID --member ID --home HOME --task ID --mode MODE --project PATH'; fi
+    file=$(activating_file)
+    if [ ! -f "$file" ] || ! jq -e --arg id "$2" --arg member "$4" --arg home "$6" --arg task "$8" --arg mode "${10}" --arg project "${12}" '.id == $id and (.members[] | select(.id == $member and .home == $home and .task_id == $task and .mode == $mode and .project == $project))' "$file" >/dev/null; then die 'reviewed mandate member mismatch'; fi
+    printf 'member: %s\n' "$4"
     ;;
   query)
     if [ "${1:-}" != --home ] || [ "${3:-}" != --task ] || [ "${5:-}" != --spawn-gen ] || [ "${7:-}" != --action ] || [ -z "${2:-}" ] || [ -z "${4:-}" ] || [ -z "${6:-}" ] || [ -z "${8:-}" ]; then die 'usage: query --home HOME --task ID --spawn-gen GEN --action ACTION [--environment NAME]'; fi
