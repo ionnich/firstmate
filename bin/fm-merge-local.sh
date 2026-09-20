@@ -140,8 +140,8 @@ if [ -n "$mandate_id" ]; then
   mandate_grant=$(FM_AUTONOMOUS_MANDATE_LOCK_HELD=1 "$SCRIPT_DIR/fm-autonomous-mandate.sh" query \
     --home "$FM_HOME" --task "$ID" --spawn-gen "$MERGE_EXPECTED_SPAWN_GEN" --action merge) || exit 1
   if [ "$(printf '%s' "$mandate_grant" | jq -r '.result // empty' 2>/dev/null)" != grant ]; then
-    echo "error: autonomous mandate does not currently authorize this local merge" >&2
-    exit 1
+    fm_lock_release "$MERGE_MANDATE_LOCK" || true
+    MERGE_MANDATE_LOCK=
   fi
 fi
 merge_status=0

@@ -1,3 +1,0 @@
-# Task for reviewer
-
-Independent read-only review. Current worktree HEAD is target 4eb8d6f; review diff 3dc74b6..4eb8d6f. Do NOT run tests or edit. Focus concrete defects in new autonomous-mandate implementation: atomicity/revocation, cap, primary/local secondmate auth, merge integration, missing deploy/hold/local merge seams, intent that implementation planning waits for spec review. Return concise source-backed file:line findings only; avoid style.

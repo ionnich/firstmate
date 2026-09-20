@@ -180,7 +180,7 @@ case "$cmd" in
     require_primary_writer
     acquire_lock
     file=$(record_for_id "$2") || die "unknown mandate: $2"
-    mv "$file" "$root/revoked.json"
+    mv "$file" "$root/archive/$2.revoked.json"
     printf 'revoked: %s\n' "$2"
     ;;
   archive)
@@ -193,7 +193,7 @@ case "$cmd" in
     printf 'archived: %s\n' "$2"
     ;;
   status)
-    for file in "$(proposal_file)" "$(activating_file)" "$(active_file)" "$root/revoked.json"; do
+    for file in "$(proposal_file)" "$(activating_file)" "$(active_file)"; do
       [ -f "$file" ] || continue
       jq -r '(.id + " " + (input_filename | split("/") | last | split(".")[0]))' "$file"
       exit 0
