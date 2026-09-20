@@ -3,6 +3,9 @@
 # Usage: fm-autonomous-mandate.sh propose --proposal FILE
 #        fm-autonomous-mandate.sh confirm --id ID
 #        fm-autonomous-mandate.sh launch-receipt --id ID --member ID --spawn-gen GEN
+#        fm-autonomous-mandate.sh revoke --id ID
+#        fm-autonomous-mandate.sh archive --id ID
+#        fm-autonomous-mandate.sh status
 #        fm-autonomous-mandate.sh query --home HOME --task ID --spawn-gen GEN --action ACTION [--environment NAME]
 #        fm-autonomous-mandate.sh authorize-deployment --home HOME --task ID --spawn-gen GEN --environment NAME
 # All commands require FM_HOME and use only its private data directory.
@@ -118,6 +121,26 @@ case "$cmd" in
     if [ "${1:-}" != --home ] || [ "${3:-}" != --task ] || [ "${5:-}" != --spawn-gen ] || [ "${7:-}" != --environment ] || [ -z "${2:-}" ] || [ -z "${4:-}" ] || [ -z "${6:-}" ] || [ -z "${8:-}" ]; then die 'usage: authorize-deployment --home HOME --task ID --spawn-gen GEN --environment NAME'; fi
     request_home=$2 task=$4 generation=$6 environment=$8
     query "$request_home" "$task" "$generation" deploy "$environment"
+    ;;
+  revoke)
+    [ "${1:-}" = --id ] && [ -n "${2:-}" ] || die 'usage: revoke --id ID'
+    file=$(record_for_id "$2") || die "unknown mandate: $2"
+    mv "$file" "$root/revoked.json"
+    printf 'revoked: %s\n' "$2"
+    ;;
+  archive)
+    [ "${1:-}" = --id ] && [ -n "${2:-}" ] || die 'usage: archive --id ID'
+    file=$(record_for_id "$2") || die "unknown mandate: $2"
+    mv "$file" "$root/archive/$2.json"
+    printf 'archived: %s\n' "$2"
+    ;;
+  status)
+    for file in "$(proposal_file)" "$(activating_file)" "$(active_file)" "$root/revoked.json"; do
+      [ -f "$file" ] || continue
+      jq -r '(.id + " " + (input_filename | split("/") | last | split(".")[0]))' "$file"
+      exit 0
+    done
+    printf 'none\n'
     ;;
   *) die 'usage: fm-autonomous-mandate.sh <propose|confirm|launch-receipt|query|authorize-deployment>' ;;
 esac

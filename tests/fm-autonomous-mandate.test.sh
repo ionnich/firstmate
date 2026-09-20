@@ -55,6 +55,20 @@ test_confirm_receipt_and_authorize_deployment() {
   pass 'activation binds exact generation and deployment environment'
 }
 
+test_revoke_removes_active_authority() {
+  local home="$TMP_ROOT/home-revoked" file="$TMP_ROOT/revoked.json" out
+  make_home "$home"
+  proposal "$file" "$home"
+  FM_HOME="$home" "$MANDATE" propose --proposal "$file" >/dev/null
+  FM_HOME="$home" "$MANDATE" confirm --id amd-test >/dev/null
+  FM_HOME="$home" "$MANDATE" launch-receipt --id amd-test --member member-a --spawn-gen s1 >/dev/null
+  FM_HOME="$home" "$MANDATE" revoke --id amd-test >/dev/null
+  out=$(FM_HOME="$home" "$MANDATE" query --home "$home" --task task-a --spawn-gen s1 --action merge)
+  printf '%s' "$out" | jq -e '.result == "unavailable"' >/dev/null || fail "revocation must remove authority: $out"
+  pass 'revocation removes active authority without touching task work'
+}
+
 test_propose_and_query_are_fail_closed
 test_rejects_duplicate_members_and_unknown_environment_partition
 test_confirm_receipt_and_authorize_deployment
+test_revoke_removes_active_authority
