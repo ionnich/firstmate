@@ -222,12 +222,13 @@ The [`firstmate-coding-guidelines` skill](../.agents/skills/firstmate-coding-gui
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for the firstmate-specific local test policy and entry points.
 Portable shard evidence and coverage rules are in [fm-test-portable-shards.md](fm-test-portable-shards.md); [herdr-backend.md](herdr-backend.md#destructive-lab-safety) owns the real-Herdr lane's isolation boundary, and [runtime-backends.md](verification/runtime-backends.md#herdr) owns active evidence.
 
-## Captain Preferences (data/captain.md / data/captain-shared.md)
+## Captain Preferences (data/captain.md / data/captain-shared.md / data/captain-opinions.md)
 
 Domain-local preferences for one captain's fleet live locally in each home's `data/captain.md`; it is gitignored and printed in the session-start context digest after `data/projects.md` and optional `data/secondmates.md`.
 Before changing it, inspect the current file and curate the matching bullet in place under the internal [`stow` skill's](../.agents/skills/stow/SKILL.md) tiering and archive contract; add a new bullet only for a genuinely new durable preference.
 Shared captain preferences that apply across secondmate domains live only in the primary home's optional `data/captain-shared.md`.
 `secondmate-provisioning` owns its propagation contract, including the required header, read-only secondmate copies, quarantine diagnostics, and the rollout rule that existing homes trim `data/captain.md` by hand after first propagation rather than deleting private content automatically.
+Vague captain stances live in optional primary `data/captain-opinions.md`. It is read on demand, never propagated or included in startup-memory accounting, and is advisory only: exact instructions, task contracts, safety stops, and reviewed dispatch limits always win. Opinions never grant authority, release a hold, authorize a merge, or authorize deployment.
 
 ## Operational learnings (data/learnings.md)
 

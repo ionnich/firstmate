@@ -331,8 +331,10 @@ MERGE_EXPECTED_SPAWN_GEN=$FM_BACKLOG_META_SPAWN_GEN
 
 MERGE_CONTROL_LOCK=
 MERGE_META_LOCK=
+MERGE_DISPATCH_LOCK=
 merge_control_cleanup() {
   [ -z "$MERGE_META_LOCK" ] || fm_lock_release "$MERGE_META_LOCK" || true
+  [ -z "$MERGE_DISPATCH_LOCK" ] || fm_lock_release "$MERGE_DISPATCH_LOCK" || true
   fm_afk_contract_lock_release || true
   [ -z "$MERGE_CONTROL_LOCK" ] || fm_lock_release "$MERGE_CONTROL_LOCK" || true
 }
@@ -910,6 +912,29 @@ require_away_merge_grant() {
   return 1
 }
 
+require_autonomous_dispatch_grant() {
+  local generation grant lock
+  generation=$MERGE_EXPECTED_SPAWN_GEN
+  [ -n "$generation" ] || return 1
+  if [ -z "$MERGE_DISPATCH_LOCK" ]; then
+    lock=$(FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-autonomous-dispatch.sh" lock-path) || return 1
+    fm_lock_acquire_wait "$lock" || return 1
+    MERGE_DISPATCH_LOCK=$lock
+  fi
+  grant=$(FM_AUTONOMOUS_DISPATCH_LOCK_HELD=1 "$SCRIPT_DIR/fm-autonomous-dispatch.sh" member \
+    --home "$FM_HOME" --task "$ID" --spawn-gen "$generation" --action merge 2>/dev/null) || return 1
+  if [ "$grant" != grant ]; then
+    fm_lock_release "$MERGE_DISPATCH_LOCK" || true
+    MERGE_DISPATCH_LOCK=
+    return 1
+  fi
+  [ "${#ALLOW_RED[@]}" -eq 0 ] || {
+    echo "error: --allow-red is never authorized by an autonomous dispatch" >&2
+    return 2
+  }
+  FM_PR_MERGE_AUTHORITY="autonomous-dispatch"
+}
+
 # Take the away record's own lock (bin/fm-afk-contract.sh owns it) so that
 # record cannot be published, replaced, or archived between the authority read
 # below and the forge command that acts on it. Refuses without the lock: a merge
@@ -937,7 +962,7 @@ require_current_away_authority() {
       return 2
     fi
   fi
-  require_away_merge_grant || return 1
+  require_autonomous_dispatch_grant || require_away_merge_grant || return 1
   if [ "$FM_PR_AWAY_POSTURE" = true ] && [ "${#ALLOW_RED[@]}" -gt 0 ]; then
     echo "error: --allow-red is attended-only; while the away-posture record exists the green check is absolute" >&2
     return 2
