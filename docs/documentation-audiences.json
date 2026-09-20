@@ -493,6 +493,10 @@
       "audience": "maintainer-verification"
     },
     {
+      "path": "docs/superpowers/specs/2026-09-20-autonomous-dispatch-mandate-design.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "docs/voice-relay.md",
       "audience": "operator-current"
     },
