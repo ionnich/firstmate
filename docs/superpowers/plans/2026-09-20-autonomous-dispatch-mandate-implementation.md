@@ -28,14 +28,41 @@
 - Create `bin/fm-autonomous-mandate.sh` and `tests/fm-autonomous-mandate.test.sh`.
 - Modify `bin/fm-spawn.sh:368-4055`, `bin/fm-teardown.sh:329-3494`, `bin/fm-pr-merge.sh:860-990`, `bin/fm-merge-local.sh:65-125`, and `bin/fm-captain-hold.sh:1001-1119`.
 - Modify `bin/fm-config-inherit-lib.sh:67-101,226-493`, `bin/fm-remote-inherit-push.sh:31-82`, and `bin/fm-remote-inherit.sh:110-169`.
-- Create `.agents/skills/autonomous-dispatch/SKILL.md`.
-- Modify `AGENTS.md`, `docs/configuration.md`, `docs/architecture.md`, `docs/scripts.md`, and `docs/documentation-audiences.json`.
+- Modify `AGENTS.md:280-405`, `bin/fm-brief.sh`, `bin/fm-spawn.sh`, and `bin/fm-teardown.sh` at existing intake, launch, and completion hooks.
+- Modify `docs/configuration.md`, `docs/architecture.md`, `docs/scripts.md`, and `docs/documentation-audiences.json`.
+
+## Dispatch integration boundary
+
+No tracked `assemble-dispatch`, `run-dispatch`, or `end-dispatch` executable exists.
+
+`AGENTS.md:284-318` is current assemble-dispatch runtime procedure because it resolves intake, task scope, delivery contract, and task brief.
+
+`AGENTS.md:320-340` plus `bin/fm-spawn.sh` is current run-dispatch runtime procedure because it launches only after task-specific review and records native task metadata.
+
+`AGENTS.md:385-400` plus `bin/fm-teardown.sh` is current end-dispatch runtime procedure because it validates landing, completes task lifecycle, and removes native records.
+
+Implementation must add mandate calls at those existing hooks and regression coverage in `tests/fm-brief.test.sh`, `tests/fm-spawn-batch.test.sh`, and `tests/fm-teardown.test.sh`.
+
+Do not create a standalone skill as a dispatch owner.
+
+The implementation changes the existing AGENTS runtime procedure directly with concise one-owner cross-references to the mandate script.
 
 ### Task 1: Create mandate owner and schema validation
 
 **Files:** Create `bin/fm-autonomous-mandate.sh` and `tests/fm-autonomous-mandate.test.sh`.
 
 **Interfaces:** Add `propose`, `confirm`, `launch-receipt`, `activate`, `query`, `answer`, `revoke`, `archive`, `recover`, and `status` subcommands.
+
+**Shell contract:**
+
+```bash
+bin/fm-autonomous-mandate.sh propose --proposal <absolute-json>
+bin/fm-autonomous-mandate.sh query --home <absolute-home> --task <task-id> --spawn-gen <spawn-gen> --action <decision|merge|deploy> [--environment <name>]
+```
+
+`propose` prints `proposed: <id>` on success.
+
+`query` prints one JSON object with `result` set to `grant`, `deny`, or `unavailable`.
 
 - [ ] Write public-command tests that accept valid `fm-autonomous-mandate.v1` proposal and deny absent, malformed, symlinked, hardlinked, duplicate, unreadable, and cross-device records.
 - [ ] Run `bin/fm-test-run.sh tests/fm-autonomous-mandate.test.sh` and confirm it fails because owner is absent.
@@ -51,6 +78,21 @@
 **Files:** Modify `bin/fm-autonomous-mandate.sh`, `bin/fm-spawn.sh:368-4055`, `bin/fm-teardown.sh:329-3494`, `tests/fm-spawn-batch.test.sh`, and `tests/fm-teardown.test.sh`.
 
 **Interfaces:** `confirm --id <mandate-id>` creates activating state, and `launch-receipt --id <mandate-id> --home <home> --task <task-id> --spawn-gen <spawn-gen>` binds native identity.
+
+**Shell contract:**
+
+```bash
+bin/fm-autonomous-mandate.sh confirm --id <mandate-id>
+bin/fm-spawn.sh <task-id> <project> --mode <mode> --yolo <on|off> --mandate-id <mandate-id> --mandate-member <member-id>
+bin/fm-autonomous-mandate.sh launch-receipt --id <mandate-id> --member <member-id> --spawn-gen <spawn-gen>
+bin/fm-autonomous-mandate.sh recover --id <mandate-id>
+```
+
+`confirm` prints `activating: <id>`.
+
+`launch-receipt` prints `receipt: <member-id> <spawn-gen>`.
+
+`recover` prints `recover: no-op`, `recover: launch <member-id>`, or exits nonzero with `recovery stopped: revoked`.
 
 - [ ] Write tests proving confirmation begins activation, no query grants before every receipt, and partial launch leaves launched work intact without authority.
 - [ ] Run mandate test and confirm failure because activation and receipt paths are absent.
@@ -69,6 +111,14 @@
 
 **Interfaces:** `query` returns `grant`, `deny`, or `unavailable` with mandate and member identity.
 
+**Representative implementation seam:**
+
+```bash
+answer=$(bin/fm-autonomous-mandate.sh query --home "$FM_HOME" --task "$id" --spawn-gen "$spawn_gen" --action decision) || exit $?
+[[ $(jq -r .result <<<"$answer") == grant ]] || exit 2
+bin/fm-captain-hold.sh answer "$id" --decision-file "$decision_file" --release
+```
+
 - [ ] Write tests proving validated local parent can query, remote route cannot, and answer retains source `autonomous-mandate:<id>`.
 - [ ] Run mandate test and confirm failure because local-parent query and evidence are absent.
 - [ ] Validate `.fm-secondmate-parent` through `fm_secondmate_parent_record_parse`, require `route=local` and matching primary home, and hold mandate lock through handoff.
@@ -78,20 +128,34 @@
 - [ ] Run mandate and captain-hold lifecycle tests with `bin/fm-test-run.sh` and expect PASS.
 - [ ] Commit `feat: answer mandate-authorized holds`.
 
-### Task 4: Integrate green merges and reviewed deployment wrapper
+### Task 4: Integrate green merges and existing deployment entrypoints
 
-**Files:** Modify `bin/fm-pr-merge.sh:860-990`, `bin/fm-merge-local.sh:65-125`, `tests/fm-pr-merge.test.sh`, and `tests/fm-autonomous-mandate.test.sh`, then create `bin/fm-autonomous-deploy-check.sh`.
+**Files:** Modify `bin/fm-pr-merge.sh:860-990`, `bin/fm-merge-local.sh:65-125`, `tests/fm-pr-merge.test.sh`, and `tests/fm-autonomous-mandate.test.sh`.
 
-**Interfaces:** Add `fm-autonomous-deploy-check.sh <task-id> <spawn-gen> <environment> -- <command> [args...]`.
+**Interfaces:** Add `bin/fm-autonomous-mandate.sh authorize-deployment --home <home> --task <task-id> --spawn-gen <spawn-gen> --environment <environment>`.
 
-- [ ] Write tests proving green exact-member merge passes authority, red checks never reach forge, and excluded environment never runs wrapped command.
+`authorize-deployment` is an authority query only.
+
+It never accepts a command, arguments, shell text, target inference, or deployment credentials.
+
+Existing task-specific deployment entrypoints consume its JSON grant before their own execution contract.
+
+**Representative existing-entrypoint seam:**
+
+```bash
+grant=$(bin/fm-autonomous-mandate.sh authorize-deployment --home "$FM_HOME" --task "$task_id" --spawn-gen "$spawn_gen" --environment "$environment") || exit $?
+[[ $(jq -r .result <<<"$grant") == grant ]] || exit 2
+# Existing task-specific deployment owner continues here.
+```
+
+- [ ] Write tests proving green exact-member merge passes authority, red checks never reach forge, and excluded environment produces no deployment grant.
 - [ ] Run PR merge test and confirm failure because mandate is not action input.
 - [ ] Add mandate query inside existing merge critical sections without weakening PR identity, head, hold, yolo, away lock, or check verification.
 - [ ] Reject `--allow-red` under mandate unconditionally.
-- [ ] Run wrapped deployment only after exact allowed-environment query under mandate lock.
-- [ ] Never infer targets or create deployment engine.
+- [ ] Add `authorize-deployment` authority query only, with no executable command interface.
+- [ ] Preserve existing task-specific deployment entrypoints as sole deployment owners.
 - [ ] Add staging and production, explicit exclusion, later-discovered environment, revocation race, credential, rollback, and remote denial cases.
-- [ ] Run PR merge and mandate tests plus shellcheck wrapper, expecting PASS.
+- [ ] Run `bin/fm-test-run.sh tests/fm-pr-merge.test.sh`, `bin/fm-test-run.sh tests/fm-autonomous-mandate.test.sh`, and `bin/fm-lint.sh`, expecting PASS.
 - [ ] Commit `feat: gate merges and deployments by mandate`.
 
 ### Task 5: Propagate advisory captain opinions
@@ -109,16 +173,17 @@
 - [ ] Run opinion inheritance test and relevant remote inheritance test with `bin/fm-test-run.sh`, expecting PASS.
 - [ ] Commit `feat: propagate advisory captain opinions`.
 
-### Task 6: Add dispatch procedure and owner documentation
+### Task 6: Integrate dispatch procedure and owner documentation
 
-**Files:** Create `.agents/skills/autonomous-dispatch/SKILL.md` and modify documentation files named in file map.
+**Files:** Modify `AGENTS.md:284-340,385-400`, `bin/fm-brief.sh`, `bin/fm-spawn.sh`, `bin/fm-teardown.sh`, and documentation files named in file map.
 
-- [ ] Add one-line AGENTS trigger before assemble, review, approve-and-start, recovery, revocation, and finish.
-- [ ] Make skill require environment inventory, visible cap, exclusions, mandate confirmation, native spawn, recovery, and terminal archive.
+- [ ] Add mandate review fields to existing `fm-brief.sh` dispatch brief output, including exact member, environment inventory, exclusions, cap, expiry, and permanent exclusions.
+- [ ] Add concise AGENTS hooks: intake assembles reviewed proposal, spawn confirms and records exact receipt, teardown requests terminal archive.
+- [ ] Add public-interface regression assertions proving the generated brief carries review fields, spawn rejects absent or mismatched mandate member, and teardown only requests archive after terminal lifecycle proof.
 - [ ] Document optional expiry, four-worker default, no copied authority, opinion precedence, local-first authority, remote opinion propagation, and permanent exclusions.
-- [ ] Keep schema in mandate owner and procedure in skill rather than duplicate either contract.
+- [ ] Keep schema in mandate owner and dispatch procedure in existing AGENTS plus script headers rather than add a new procedure owner.
 - [ ] Classify each new tracked prose surface in `docs/documentation-audiences.json`.
-- [ ] Run mandate, opinions, PR merge, captain-hold, documentation-audience, and lint checks.
+- [ ] Run `bin/fm-test-run.sh tests/fm-autonomous-mandate.test.sh`, `bin/fm-test-run.sh tests/fm-brief.test.sh`, `bin/fm-test-run.sh tests/fm-spawn-batch.test.sh`, `bin/fm-test-run.sh tests/fm-teardown.test.sh`, `bin/fm-test-run.sh tests/fm-pr-merge.test.sh`, `bin/fm-test-run.sh tests/fm-captain-hold-lifecycle.test.sh`, `bin/fm-doc-audience-check.sh`, and `bin/fm-lint.sh`.
 - [ ] Expect all checks PASS, then commit `docs: document autonomous dispatch procedure`.
 
 ## Self-review results
