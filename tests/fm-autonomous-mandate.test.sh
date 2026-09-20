@@ -65,6 +65,11 @@ test_confirm_receipt_and_authorize_deployment() {
   printf '%s' "$out" | jq -e '.result == "grant"' >/dev/null || fail "reviewed deployment must grant: $out"
   out=$(FM_HOME="$home" "$MANDATE" authorize-deployment --home "$home" --task task-a --spawn-gen s1 --environment development)
   printf '%s' "$out" | jq -e '.result == "deny"' >/dev/null || fail "unknown environment must deny: $out"
+  if FM_HOME="$home" "$MANDATE" archive --id amd-test >/dev/null 2>&1; then
+    fail 'active mandate archived without terminal evidence'
+  fi
+  FM_HOME="$home" "$MANDATE" complete-member --id amd-test --member member-a --spawn-gen s1 >/dev/null
+  [ "$(FM_HOME="$home" "$MANDATE" status)" = none ] || fail 'all terminal members must archive mandate'
   pass 'activation binds exact generation and deployment environment'
 }
 
@@ -133,6 +138,23 @@ test_rejects_non_real_or_elapsed_utc_expiry() {
   pass 'proposal rejects non-real and elapsed UTC expiry'
 }
 
+test_recover_preserves_partial_activation_and_archive_requires_terminal_receipts() {
+  local home="$TMP_ROOT/home-recovery" file="$TMP_ROOT/recovery.json" out
+  make_home "$home"
+  proposal "$file" "$home"
+  FM_HOME="$home" "$MANDATE" propose --proposal "$file" >/dev/null
+  mv "$home/data/autonomous-mandates/proposed.json" "$home/data/autonomous-mandates/activating.json"
+  if out=$(FM_HOME="$home" "$MANDATE" archive --id amd-test 2>&1); then
+    fail "activation archived without terminal native evidence: $out"
+  fi
+  if out=$(FM_HOME="$home" "$MANDATE" recover --id amd-test 2>&1); then
+    fail "recovery accepted a failed reviewed launch: $out"
+  fi
+  [ "$(FM_HOME="$home" "$MANDATE" status)" = 'amd-test activating' ] \
+    || fail 'failed recovery must retain activation for retry'
+  pass 'recovery retains partial activation and archive requires terminal evidence'
+}
+
 test_propose_and_query_are_fail_closed
 test_rejects_duplicate_members_and_unknown_environment_partition
 test_confirm_receipt_and_authorize_deployment
@@ -140,3 +162,4 @@ test_revoke_removes_active_authority
 test_root_symlink_and_excluded_action_refuse
 test_confirm_starts_reviewed_launch_and_receipt_requires_native_identity
 test_rejects_non_real_or_elapsed_utc_expiry
+test_recover_preserves_partial_activation_and_archive_requires_terminal_receipts

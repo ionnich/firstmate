@@ -3,6 +3,9 @@
 # Usage: fm-autonomous-mandate.sh propose --proposal FILE
 #        fm-autonomous-mandate.sh confirm --id ID
 #        fm-autonomous-mandate.sh launch-receipt --id ID --member ID --spawn-gen GEN
+#        fm-autonomous-mandate.sh recover --id ID
+#        fm-autonomous-mandate.sh complete-member --id ID --member ID --spawn-gen GEN
+#        fm-autonomous-mandate.sh answer --id ID --task ID --spawn-gen GEN --decision-file FILE
 #        fm-autonomous-mandate.sh validate-member --id ID --member ID --home HOME --task ID --mode MODE --project PATH
 #        fm-autonomous-mandate.sh revoke --id ID
 #        fm-autonomous-mandate.sh archive --id ID
@@ -150,20 +153,41 @@ native_receipt_matches() {
 }
 
 launch_members() {
-  local record=$1 member task project mode yolo
+  local record=$1 only_missing=${2:-0} member task project mode yolo
   while IFS= read -r member; do
     task=$(jq -r --arg member "$member" '.members[] | select(.id == $member) | .task_id' "$record") || return 1
     project=$(jq -r --arg member "$member" '.members[] | select(.id == $member) | .launch.project' "$record") || return 1
     mode=$(jq -r --arg member "$member" '.members[] | select(.id == $member) | .launch.mode' "$record") || return 1
     yolo=$(jq -r --arg member "$member" '.members[] | select(.id == $member) | .launch.yolo' "$record") || return 1
+    FM_AUTONOMOUS_MANDATE_LOCK_HELD=1 \
     FM_HOME=$(jq -r --arg member "$member" '.members[] | select(.id == $member) | .home' "$record") \
       "$SCRIPT_DIR/fm-spawn.sh" "$task" "$project" --mode "$mode" --yolo "$yolo" \
       --mandate-id "$id" --mandate-member "$member" || return 1
-  done < <(jq -r '.members[].id' "$record")
+  done < <(jq -r --argjson only_missing "$only_missing" '.members[] | select($only_missing == 0 or (.spawn_gen | type != "string" or length == 0)) | .id' "$record")
+}
+
+record_expired() {
+  local record=$1 expiry epoch now
+  expiry=$(jq -r '.expires_at // empty' "$record") || return 1
+  [ -n "$expiry" ] || return 1
+  epoch=$(utc_epoch "$expiry") || return 1
+  now=$(date -u +%s) || return 1
+  [ "$epoch" -le "$now" ]
+}
+
+all_members_terminal() {
+  jq -e 'all(.members[]; . as $member | (.spawn_gen | type == "string" and length > 0) and (.terminal | type == "object" and .spawn_gen == $member.spawn_gen))' "$1" >/dev/null
+}
+
+archive_record() {
+  local record=$1 id=$2 suffix=${3:-} destination
+  destination="$root/archive/$id$suffix.json"
+  [ ! -e "$destination" ] && [ ! -L "$destination" ] || die "mandate archive already exists: $id"
+  mv "$record" "$destination"
 }
 
 query() {
-  local request_home=$1 task=$2 generation=$3 action=$4 environment=${5:-} file now
+  local request_home=$1 task=$2 generation=$3 action=$4 environment=${5:-} file now id member
   [ "$request_home" = "$caller_home" ] || { result unavailable 'caller home mismatch'; return; }
   case "$action" in decision|merge|deploy) ;; *) result deny 'action is permanently excluded'; return ;; esac
   [ "${FM_AUTONOMOUS_MANDATE_LOCK_HELD:-}" = 1 ] || acquire_lock
@@ -174,6 +198,9 @@ query() {
   if ! jq -e --arg now "$now" '.expires_at == null or .expires_at > $now' "$file" >/dev/null; then result deny 'mandate expired'; return; fi
   if ! jq -e --arg home "$request_home" --arg task "$task" --arg generation "$generation" '
       .members[] | select(.home == $home and .task_id == $task and .spawn_gen == $generation)' "$file" >/dev/null; then result deny 'exact member not active'; return; fi
+  id=$(jq -r '.id' "$file") || { result unavailable 'invalid active mandate'; return; }
+  member=$(jq -r --arg home "$request_home" --arg task "$task" --arg generation "$generation" '.members[] | select(.home == $home and .task_id == $task and .spawn_gen == $generation) | .id' "$file") || { result unavailable 'invalid active mandate'; return; }
+  native_receipt_matches "$file" "$member" "$generation" || { result deny 'native task no longer matches'; return; }
   if [ "$action" = deploy ] && ! jq -e --arg home "$request_home" --arg task "$task" --arg generation "$generation" --arg environment "$environment" '
       .members[] | select(.home == $home and .task_id == $task and .spawn_gen == $generation) | .environments.allowed | index($environment) != null' "$file" >/dev/null; then result deny 'environment not reviewed'; return; fi
   result grant 'reviewed active member'
@@ -195,10 +222,10 @@ case "$cmd" in
     require_primary_writer
     acquire_lock
     [ ! -e "$(active_file)" ] || die 'an active mandate must be archived or revoked first'
-    file=$(record_for_id "$2") || die "unknown mandate: $2"
+    id=$2
+    file=$(record_for_id "$id") || die "unknown mandate: $id"
     [ "$file" = "$(proposal_file)" ] || die "mandate is not proposed: $2"
     mv "$file" "$(activating_file)"
-    release_lock
     launch_members "$(activating_file)" || die "activation launch failed: $2"
     printf 'activating: %s\n' "$2"
     ;;
@@ -208,7 +235,7 @@ case "$cmd" in
     if ! safe_id "$id" || ! safe_id "$member" || ! safe_id "$generation"; then
       die 'invalid receipt identity'
     fi
-    acquire_lock
+    [ "${FM_AUTONOMOUS_MANDATE_LOCK_HELD:-}" = 1 ] || acquire_lock
     file=$(record_for_id "$id") || die "unknown mandate: $id"
     [ "$file" = "$(activating_file)" ] || die "mandate is not activating: $id"
     jq -e --arg member "$member" '.members[] | select(.id == $member)' "$file" >/dev/null || die "unknown member: $member"
@@ -224,7 +251,7 @@ case "$cmd" in
     if ! safe_id "$2" || ! safe_id "$4"; then
       die 'invalid mandate identity'
     fi
-    acquire_lock
+    [ "${FM_AUTONOMOUS_MANDATE_LOCK_HELD:-}" = 1 ] || acquire_lock
     file=$(activating_file)
     if [ ! -f "$file" ] || ! jq -e --arg id "$2" --arg member "$4" --arg home "$6" --arg task "$8" --arg mode "${10}" --arg project "${12}" '.id == $id and (.members[] | select(.id == $member and .home == $home and .task_id == $task and .mode == $mode and .project == $project))' "$file" >/dev/null; then die 'reviewed mandate member mismatch'; fi
     printf 'member: %s\n' "$4"
@@ -245,13 +272,55 @@ case "$cmd" in
     request_home=$2 task=$4 generation=$6 environment=$8
     query "$request_home" "$task" "$generation" deploy "$environment"
     ;;
+  recover)
+    [ "${1:-}" = --id ] && [ -n "${2:-}" ] || die 'usage: recover --id ID'
+    safe_id "$2" || die 'invalid mandate id'
+    require_primary_writer
+    id=$2
+    acquire_lock
+    file=$(record_for_id "$id") || die "unknown mandate: $id"
+    [ "$file" = "$(activating_file)" ] || die "mandate is not activating: $id"
+    if jq -e 'all(.members[]; (.spawn_gen|type == "string" and length > 0))' "$file" >/dev/null; then
+      printf 'recover: no-op\n'
+    else
+      launch_members "$file" 1 || die "recovery launch failed: $id"
+      printf 'recover: launch\n'
+    fi
+    ;;
+  complete-member)
+    if [ "${1:-}" != --id ] || [ "${3:-}" != --member ] || [ "${5:-}" != --spawn-gen ] || [ -z "${2:-}" ] || [ -z "${4:-}" ] || [ -z "${6:-}" ]; then die 'usage: complete-member --id ID --member ID --spawn-gen GEN'; fi
+    id=$2 member=$4 generation=$6
+    safe_id "$id" && safe_id "$member" && safe_id "$generation" || die 'invalid terminal identity'
+    acquire_lock
+    file=$(record_for_id "$id") || die "unknown mandate: $id"
+    [ "$file" = "$(active_file)" ] || die "mandate is not active: $id"
+    native_receipt_matches "$file" "$member" "$generation" || die 'native terminal evidence does not match reviewed member'
+    tmp=$(mktemp "$root/.terminal.XXXXXX") || die 'cannot update terminal evidence'
+    jq --arg member "$member" --arg generation "$generation" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      '(.members[] | select(.id == $member)).terminal = {spawn_gen:$generation,at:$at}' "$file" > "$tmp"
+    mv "$tmp" "$file"
+    if all_members_terminal "$file"; then archive_record "$file" "$id"; fi
+    printf 'complete: %s %s\n' "$member" "$generation"
+    ;;
+  answer)
+    if [ "${1:-}" != --id ] || [ "${3:-}" != --task ] || [ "${5:-}" != --spawn-gen ] || [ "${7:-}" != --decision-file ] || [ -z "${2:-}" ] || [ -z "${4:-}" ] || [ -z "${6:-}" ] || [ -z "${8:-}" ]; then die 'usage: answer --id ID --task ID --spawn-gen GEN --decision-file FILE'; fi
+    id=$2 task=$4 generation=$6 decision_file=$8
+    safe_id "$id" && safe_id "$task" && safe_id "$generation" || die 'invalid decision identity'
+    [ -f "$decision_file" ] && [ ! -L "$decision_file" ] || die 'invalid decision file'
+    grant=$(query "$caller_home" "$task" "$generation" decision)
+    [ "$(printf '%s' "$grant" | jq -r '.result // empty')" = grant ] || die 'mandate does not authorize this decision'
+    tmp=$(mktemp "$root/.decision.XXXXXX") || die 'cannot stage mandate decision'
+    { cat "$decision_file"; printf '\nAuthority source: autonomous-mandate:%s\n' "$id"; } > "$tmp"
+    "$SCRIPT_DIR/fm-captain-hold.sh" answer "$task" --decision-file "$tmp" --release
+    rm -f "$tmp"
+    ;;
   revoke)
     [ "${1:-}" = --id ] && [ -n "${2:-}" ] || die 'usage: revoke --id ID'
     safe_id "$2" || die 'invalid mandate id'
     require_primary_writer
     acquire_lock
     file=$(record_for_id "$2") || die "unknown mandate: $2"
-    mv "$file" "$root/archive/$2.revoked.json"
+    archive_record "$file" "$2" '.revoked'
     printf 'revoked: %s\n' "$2"
     ;;
   archive)
@@ -260,7 +329,8 @@ case "$cmd" in
     require_primary_writer
     acquire_lock
     file=$(record_for_id "$2") || die "unknown mandate: $2"
-    mv "$file" "$root/archive/$2.json"
+    if ! record_expired "$file" && ! all_members_terminal "$file"; then die 'mandate members are not terminal'; fi
+    archive_record "$file" "$2"
     printf 'archived: %s\n' "$2"
     ;;
   status)
