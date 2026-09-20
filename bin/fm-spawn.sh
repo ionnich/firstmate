@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Spawn a direct report: a crewmate in a treehouse or Orca worktree, or a
 # secondmate in its isolated firstmate home.
-# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--mandate-id <id> --mandate-member <id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
+# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
 #        fm-spawn.sh <task-id> <project-dir> --scout [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
@@ -508,8 +508,6 @@ EFFORT=
 BACKEND_ARG=
 MODE=
 YOLO=
-MANDATE_ID=
-MANDATE_MEMBER=
 TRACEPARENT_ARG=
 HARNESS_SET=0
 MODEL_SET=0
@@ -517,8 +515,6 @@ EFFORT_SET=0
 BACKEND_SET=0
 MODE_SET=0
 YOLO_SET=0
-MANDATE_ID_SET=0
-MANDATE_MEMBER_SET=0
 TRACEPARENT_SET=0
 RELAUNCH=0
 POS=()
@@ -535,8 +531,6 @@ for a in "$@"; do
       backend) BACKEND_ARG=$a; BACKEND_SET=1 ;;
       mode) MODE=$a; MODE_SET=1 ;;
       yolo) YOLO=$a; YOLO_SET=1 ;;
-      mandate-id) MANDATE_ID=$a; MANDATE_ID_SET=1 ;;
-      mandate-member) MANDATE_MEMBER=$a; MANDATE_MEMBER_SET=1 ;;
       traceparent) TRACEPARENT_ARG=$a; TRACEPARENT_SET=1 ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
@@ -559,10 +553,6 @@ for a in "$@"; do
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
     --yolo) want_value=yolo ;;
     --yolo=*) YOLO=${a#--yolo=}; YOLO_SET=1 ;;
-    --mandate-id) want_value=mandate-id ;;
-    --mandate-id=*) MANDATE_ID=${a#--mandate-id=}; MANDATE_ID_SET=1 ;;
-    --mandate-member) want_value=mandate-member ;;
-    --mandate-member=*) MANDATE_MEMBER=${a#--mandate-member=}; MANDATE_MEMBER_SET=1 ;;
     --traceparent) want_value=traceparent ;;
     --traceparent=*) TRACEPARENT_ARG=${a#--traceparent=}; TRACEPARENT_SET=1 ;;
     *) POS+=("$a") ;;
@@ -575,8 +565,6 @@ done
 [ "$BACKEND_SET" -eq 0 ] || [ -n "$BACKEND_ARG" ] || { echo "error: --backend requires a non-empty value" >&2; exit 1; }
 [ "$MODE_SET" -eq 0 ] || [ -n "$MODE" ] || { echo "error: --mode requires a non-empty value" >&2; exit 1; }
 [ "$YOLO_SET" -eq 0 ] || [ -n "$YOLO" ] || { echo "error: --yolo requires a non-empty value" >&2; exit 1; }
-[ "$MANDATE_ID_SET" -eq "$MANDATE_MEMBER_SET" ] || { echo "error: --mandate-id and --mandate-member must be passed together" >&2; exit 1; }
-[ "$MANDATE_ID_SET" -eq 0 ] || { [ -n "$MANDATE_ID" ] && [ -n "$MANDATE_MEMBER" ]; } || { echo "error: mandate values must be non-empty" >&2; exit 1; }
 [ "$TRACEPARENT_SET" -eq 0 ] || [ -n "$TRACEPARENT_ARG" ] || { echo "error: --traceparent requires a non-empty value" >&2; exit 1; }
 # A parent-delivered carrier replaces this home's own resolution, so it is
 # refused unless it is a secondmate spawn carrying a strictly valid W3C value.
@@ -601,7 +589,6 @@ esac
 # task's own durable record below. Contradicting it on the command line is a
 # refusal rather than a silently-ignored flag.
 if [ "$RELAUNCH" -eq 1 ]; then
-  [ "$MANDATE_ID_SET" -eq 0 ] || { echo "error: --mandate-id applies only to fresh reviewed ship spawns" >&2; exit 1; }
   [ "$BACKEND_SET" -eq 0 ] || { echo "error: --relaunch reuses the task's recorded backend; --backend cannot override it" >&2; exit 1; }
   [ "$KIND_SET" -eq 0 ] || { echo "error: --relaunch reuses the task's recorded kind; --scout/--secondmate cannot override it" >&2; exit 1; }
   [ "$MODE_SET" -eq 0 ] || { echo "error: --relaunch reuses the task's recorded delivery mode; --mode cannot override it" >&2; exit 1; }
@@ -631,9 +618,6 @@ else
       on|off) ;;
       *) echo "error: --yolo must be on or off (got '$YOLO')" >&2; exit 1 ;;
     esac
-    if [ "$MANDATE_ID_SET" -eq 1 ]; then
-      case "$MANDATE_ID:$MANDATE_MEMBER" in *[!A-Za-z0-9._:-]*|:) echo "error: invalid mandate identity" >&2; exit 1 ;; esac
-    fi
   else
     [ "$MODE_SET" -eq 0 ] || {
       echo "error: --mode applies only to ship spawns; a scout delivers a report and a secondmate records its own fixed posture" >&2
@@ -2431,14 +2415,6 @@ else
   WT=""
   BRIEF="$DATA/$ID/brief.md"
 fi
-if [ "$MANDATE_ID_SET" -eq 1 ]; then
-  "$SCRIPT_DIR/fm-autonomous-mandate.sh" validate-member \
-    --id "$MANDATE_ID" --member "$MANDATE_MEMBER" --home "$FM_HOME" \
-    --task "$ID" --mode "$MODE" --project "$PROJ_ABS" || {
-      echo "error: reviewed autonomous mandate does not authorize this spawn" >&2
-      exit 1
-    }
-fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   SPAWN_TREEHOUSE_PROJECT_LOCK=$(fm_treehouse_project_lock_path "$PROJ_ABS") || {
     echo "error: could not resolve the shared Treehouse project lock for $PROJ_ABS" >&2
@@ -4003,7 +3979,7 @@ SPAWN_META_PATH=$SPAWN_META_TMP
 preserve_relaunch_meta() {
   awk -F= '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode yolo mandate_id mandate_member tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode yolo tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
     !($1 in owned)
@@ -4018,8 +3994,6 @@ preserve_relaunch_meta() {
   echo "kind=$KIND"
   [ -z "$MODE" ] || echo "mode=$MODE"
   [ -z "$YOLO" ] || echo "yolo=$YOLO"
-  [ "$MANDATE_ID_SET" -eq 0 ] || echo "mandate_id=$MANDATE_ID"
-  [ "$MANDATE_ID_SET" -eq 0 ] || echo "mandate_member=$MANDATE_MEMBER"
   echo "tasktmp=$TASK_TMP"
   echo "model=${MODEL:-default}"
   echo "effort=${EFFORT:-default}"
@@ -4450,13 +4424,6 @@ fi
 trap - HUP INT TERM
 if [ "$SPAWN_BACKLOG_COMMIT_STATUS" -ne 0 ]; then
   exit "$SPAWN_BACKLOG_COMMIT_STATUS"
-fi
-if [ "$MANDATE_ID_SET" -eq 1 ]; then
-  "$SCRIPT_DIR/fm-autonomous-mandate.sh" launch-receipt \
-    --id "$MANDATE_ID" --member "$MANDATE_MEMBER" --spawn-gen "$SPAWN_GEN" || {
-      echo "error: task $ID launched but autonomous mandate receipt failed; authority remains unavailable until receipt recovery" >&2
-      exit 1
-    }
 fi
 if [ -n "$SPAWN_DEFERRED_SIGNAL" ]; then
   case "$SPAWN_DEFERRED_SIGNAL" in

@@ -29,17 +29,14 @@ sha256_file() {
 file_link_count() {
   if [ "$(uname)" = Darwin ]; then /usr/bin/stat -f %l "$1" 2>/dev/null; else stat -c %h "$1" 2>/dev/null; fi
 }
-authoritative_data_header_valid() {
+shared_captain_header_valid() {
   local head
   head=$(sed -n '1,12p' "$1" 2>/dev/null) || return 1
   case "$head" in *main-authoritative*) ;; *) return 1 ;; esac
   case "$head" in *"read-only in secondmate homes"*) ;; *) return 1 ;; esac
   case "$head" in *"must not be edited there"*) ;; *) return 1 ;; esac
-  case "$2" in
-    data/captain-shared.md) case "$head" in *"main firstmate"*) ;; *) return 1 ;; esac ;;
-    data/captain-opinions.md) case "$head" in *"advisory only"*|*"never grant authority"*) ;; *) return 1 ;; esac ;;
-    *) return 1 ;;
-  esac
+  case "$head" in *"main firstmate"*) ;; *) return 1 ;; esac
+  case "$head" in *"marked status"*|*"document pointer"*) ;; *) return 1 ;; esac
 }
 [ "$#" -eq 2 ] || { echo "usage: fm-remote-inherit-push.sh <secondmate-id> <generation>" >&2; exit 2; }
 ID=$1
@@ -76,9 +73,9 @@ while IFS= read -r rel; do
   if [ "$source_present" = 1 ]; then
     [ -f "$source" ] && [ ! -L "$source" ] || die "inherited source is unsafe: $source"
     [ "$(file_link_count "$source")" = 1 ] || die "inherited source is hardlinked: $source"
-    case "$rel" in
-      data/captain-shared.md|data/captain-opinions.md) authoritative_data_header_valid "$source" "$rel" || die "primary-authoritative data has no valid header: $rel" ;;
-    esac
+    if [ "$rel" = data/captain-shared.md ]; then
+      shared_captain_header_valid "$source" || die "shared captain preferences have no valid primary-authoritative header"
+    fi
     snapshot="$TMP/$(printf '%s' "$rel" | tr '/' '_')"
     cp -p -- "$source" "$snapshot" || die "cannot snapshot inherited source: $source"
     [ -f "$snapshot" ] && [ ! -L "$snapshot" ] || die "inherited source snapshot is unsafe: $source"

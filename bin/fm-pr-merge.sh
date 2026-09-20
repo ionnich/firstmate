@@ -331,10 +331,8 @@ MERGE_EXPECTED_SPAWN_GEN=$FM_BACKLOG_META_SPAWN_GEN
 
 MERGE_CONTROL_LOCK=
 MERGE_META_LOCK=
-MERGE_MANDATE_LOCK=
 merge_control_cleanup() {
   [ -z "$MERGE_META_LOCK" ] || fm_lock_release "$MERGE_META_LOCK" || true
-  [ -z "$MERGE_MANDATE_LOCK" ] || fm_lock_release "$MERGE_MANDATE_LOCK" || true
   fm_afk_contract_lock_release || true
   [ -z "$MERGE_CONTROL_LOCK" ] || fm_lock_release "$MERGE_CONTROL_LOCK" || true
 }
@@ -912,29 +910,6 @@ require_away_merge_grant() {
   return 1
 }
 
-require_autonomous_merge_grant() {
-  local mandate_id grant lock
-  mandate_id=$(awk -F= '$1 == "mandate_id" { print substr($0, index($0, "=") + 1); exit }' "$META")
-  [ -n "$mandate_id" ] || return 1
-  if [ "${#ALLOW_RED[@]}" -gt 0 ]; then
-    echo "error: --allow-red is never authorized by an autonomous mandate" >&2
-    return 2
-  fi
-  lock=$("$SCRIPT_DIR/fm-autonomous-mandate.sh" lock-path) || return 1
-  fm_lock_acquire_wait "$lock" || return 1
-  MERGE_MANDATE_LOCK=$lock
-  grant=$(FM_AUTONOMOUS_MANDATE_LOCK_HELD=1 "$SCRIPT_DIR/fm-autonomous-mandate.sh" query \
-    --home "$FM_HOME" --task "$ID" --spawn-gen "$MERGE_EXPECTED_SPAWN_GEN" --action merge) || return 1
-  if [ "$(printf '%s' "$grant" | jq -r '.result // empty' 2>/dev/null)" = grant ]; then
-    FM_PR_MERGE_AUTHORITY="autonomous-mandate:$mandate_id"
-    return 0
-  fi
-  fm_lock_release "$MERGE_MANDATE_LOCK" || true
-  MERGE_MANDATE_LOCK=
-  echo "error: autonomous mandate does not currently authorize this merge" >&2
-  return 1
-}
-
 # Take the away record's own lock (bin/fm-afk-contract.sh owns it) so that
 # record cannot be published, replaced, or archived between the authority read
 # below and the forge command that acts on it. Refuses without the lock: a merge
@@ -962,7 +937,7 @@ require_current_away_authority() {
       return 2
     fi
   fi
-  require_autonomous_merge_grant || require_away_merge_grant || return 1
+  require_away_merge_grant || return 1
   if [ "$FM_PR_AWAY_POSTURE" = true ] && [ "${#ALLOW_RED[@]}" -gt 0 ]; then
     echo "error: --allow-red is attended-only; while the away-posture record exists the green check is absolute" >&2
     return 2

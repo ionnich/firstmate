@@ -55,9 +55,7 @@ fi
 MERGE_EXPECTED_SPAWN_GEN=$FM_BACKLOG_META_SPAWN_GEN
 
 MERGE_CONTROL_LOCK=
-MERGE_MANDATE_LOCK=
 merge_control_cleanup() {
-  [ -z "$MERGE_MANDATE_LOCK" ] || fm_lock_release "$MERGE_MANDATE_LOCK" || true
   [ -z "$MERGE_CONTROL_LOCK" ] || fm_lock_release "$MERGE_CONTROL_LOCK" || true
 }
 trap merge_control_cleanup EXIT
@@ -128,22 +126,6 @@ case "$hold_status" in
     exit 1
     ;;
 esac
-
-mandate_id=$(awk -F= '$1 == "mandate_id" { print substr($0, index($0, "=") + 1); exit }' "$META")
-if [ -n "$mandate_id" ]; then
-  mandate_lock=$("$SCRIPT_DIR/fm-autonomous-mandate.sh" lock-path) || {
-    echo "error: autonomous mandate lock is unavailable" >&2
-    exit 1
-  }
-  fm_lock_acquire_wait "$mandate_lock"
-  MERGE_MANDATE_LOCK=$mandate_lock
-  mandate_grant=$(FM_AUTONOMOUS_MANDATE_LOCK_HELD=1 "$SCRIPT_DIR/fm-autonomous-mandate.sh" query \
-    --home "$FM_HOME" --task "$ID" --spawn-gen "$MERGE_EXPECTED_SPAWN_GEN" --action merge) || exit 1
-  if [ "$(printf '%s' "$mandate_grant" | jq -r '.result // empty' 2>/dev/null)" != grant ]; then
-    fm_lock_release "$MERGE_MANDATE_LOCK" || true
-    MERGE_MANDATE_LOCK=
-  fi
-fi
 merge_status=0
 git -C "$PROJ" merge --ff-only "$BRANCH" >/dev/null || merge_status=$?
 fm_lock_release "$MERGE_CONTROL_LOCK" || true

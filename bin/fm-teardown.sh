@@ -327,8 +327,6 @@ fi
 fm_lease_guard "$ID" "teardown (fm-teardown)"
 
 META="$STATE/$ID.meta"
-MANDATE_ID=$(awk -F= '$1 == "mandate_id" { print substr($0, index($0, "=") + 1); exit }' "$META")
-MANDATE_MEMBER=$(awk -F= '$1 == "mandate_member" { print substr($0, index($0, "=") + 1); exit }' "$META")
 TREEHOUSE_PROJECT_LOCK=
 TREEHOUSE_PROJECT_LOCK_HELD=0
 TREEHOUSE_SLOT_LOCK_REQUIRED=0
@@ -3466,17 +3464,6 @@ rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.progress" \
 # retired endpoint; teardown only runs after landing is confirmed, so any
 # leftover unhandled steer here is moot rather than unlanded work.
 rm -rf "$STATE/$ID.inbox"
-if [ -n "$MANDATE_ID" ] || [ -n "$MANDATE_MEMBER" ]; then
-  [ -n "$MANDATE_ID" ] && [ -n "$MANDATE_MEMBER" ] || {
-    echo "error: task $ID has incomplete autonomous mandate metadata" >&2
-    exit 1
-  }
-  "$SCRIPT_DIR/fm-autonomous-mandate.sh" complete-member \
-    --id "$MANDATE_ID" --member "$MANDATE_MEMBER" --spawn-gen "$TEARDOWN_META_SPAWN_GEN" || {
-      echo "error: task $ID terminal mandate evidence could not be recorded" >&2
-      exit 1
-    }
-fi
 # The record is gone, so the backlog must not still show this task in flight
 # when teardown reports success. Still under this task's meta lock, so a steer
 # racing the same id stays serialized exactly as it was before. A captain-held
