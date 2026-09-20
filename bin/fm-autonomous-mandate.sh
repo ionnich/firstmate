@@ -53,6 +53,18 @@ acquire_lock() {
 }
 safe_id() { case "$1" in amd-[A-Za-z0-9._-]*|[A-Za-z0-9._-]*) [ -n "$1" ] ;; *) return 1 ;; esac; }
 
+utc_epoch() {
+  local stamp=$1 epoch rendered
+  case "$stamp" in ????-??-??T??:??:??Z) ;; *) return 1 ;; esac
+  epoch=$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$stamp" +%s 2>/dev/null \
+    || date -u -d "$stamp" +%s 2>/dev/null) || return 1
+  case "$epoch" in ''|*[!0-9]*) return 1 ;; esac
+  rendered=$(date -u -r "$epoch" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+    || date -u -d "@$epoch" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) || return 1
+  [ "$rendered" = "$stamp" ] || return 1
+  printf '%s\n' "$epoch"
+}
+
 result() {
   jq -cn --arg result "$1" --arg reason "$2" '{result:$result,reason:$reason}'
 }
@@ -62,6 +74,7 @@ proposal_file() { printf '%s\n' "$root/proposed.json"; }
 activating_file() { printf '%s\n' "$root/activating.json"; }
 
 valid_record() {
+  local expiry
   jq -e --arg home "$home" '
     .schema == "fm-autonomous-mandate.v1" and
     (.id | type == "string" and test("^[A-Za-z0-9._-]+$")) and
@@ -77,19 +90,27 @@ valid_record() {
       (.task_id|type == "string" and length > 0) and
       (.mode|type == "string" and length > 0) and
       (.project|type == "string" and length > 0) and
-      (.launch|type == "object") and
+      (. as $member | .launch | type == "object" and .project == $member.project and .mode == $member.mode and (.yolo == "on" or .yolo == "off")) and
       (.environments.allowed|type == "array") and
       (.environments.excluded|type == "array") and
       (([.environments.allowed[], .environments.excluded[]] | length) == ([.environments.allowed[], .environments.excluded[]] | unique | length))
     )
   ' "$1" >/dev/null
+  expiry=$(jq -r '.expires_at // empty' "$1") || return 1
+  [ -z "$expiry" ] || utc_epoch "$expiry" >/dev/null
 }
 
 copy_record() {
-  local source=$1 destination=$2 tmp
+  local source=$1 destination=$2 tmp expiry epoch now
   [ -f "$source" ] && [ ! -L "$source" ] || die "invalid record: $source"
   jq -e '([.members[]? | (.home + "\u0000" + .task_id)] | length == (unique | length))' "$source" >/dev/null || die 'duplicate member'
   valid_record "$source" || die 'invalid autonomous mandate proposal'
+  expiry=$(jq -r '.expires_at // empty' "$source") || die 'invalid autonomous mandate proposal'
+  if [ -n "$expiry" ]; then
+    epoch=$(utc_epoch "$expiry") || die 'invalid autonomous mandate proposal'
+    now=$(date -u +%s) || die 'cannot read current time'
+    [ "$epoch" -gt "$now" ] || die 'mandate expiry must be after approval'
+  fi
   tmp=$(mktemp "$root/.mandate.XXXXXX") || die 'cannot create mandate record'
   cp "$source" "$tmp"
   chmod 600 "$tmp"
@@ -102,6 +123,43 @@ record_for_id() {
     [ -f "$file" ] && jq -e --arg id "$id" '.id == $id' "$file" >/dev/null 2>&1 && { printf '%s\n' "$file"; return; }
   done
   return 1
+}
+
+native_meta_value() {
+  local meta=$1 key=$2 count value
+  [ -f "$meta" ] && [ ! -L "$meta" ] || return 1
+  count=$(awk -F= -v key="$key" '$1 == key { count++ } END { print count + 0 }' "$meta") || return 1
+  [ "$count" = 1 ] || return 1
+  value=$(awk -F= -v key="$key" '$1 == key { print substr($0, length(key) + 2) }' "$meta") || return 1
+  [ -n "$value" ] || return 1
+  printf '%s\n' "$value"
+}
+
+native_receipt_matches() {
+  local record=$1 member=$2 generation=$3 task project mode meta
+  task=$(jq -r --arg member "$member" '.members[] | select(.id == $member) | .task_id' "$record") || return 1
+  project=$(jq -r --arg member "$member" '.members[] | select(.id == $member) | .project' "$record") || return 1
+  mode=$(jq -r --arg member "$member" '.members[] | select(.id == $member) | .mode' "$record") || return 1
+  meta="$caller_home/state/$task.meta"
+  [ "$(native_meta_value "$meta" endpoint_task_id)" = "$task" ] \
+    && [ "$(native_meta_value "$meta" project)" = "$project" ] \
+    && [ "$(native_meta_value "$meta" mode)" = "$mode" ] \
+    && [ "$(native_meta_value "$meta" mandate_id)" = "$id" ] \
+    && [ "$(native_meta_value "$meta" mandate_member)" = "$member" ] \
+    && [ "$(native_meta_value "$meta" spawn_gen)" = "$generation" ]
+}
+
+launch_members() {
+  local record=$1 member task project mode yolo
+  while IFS= read -r member; do
+    task=$(jq -r --arg member "$member" '.members[] | select(.id == $member) | .task_id' "$record") || return 1
+    project=$(jq -r --arg member "$member" '.members[] | select(.id == $member) | .launch.project' "$record") || return 1
+    mode=$(jq -r --arg member "$member" '.members[] | select(.id == $member) | .launch.mode' "$record") || return 1
+    yolo=$(jq -r --arg member "$member" '.members[] | select(.id == $member) | .launch.yolo' "$record") || return 1
+    FM_HOME=$(jq -r --arg member "$member" '.members[] | select(.id == $member) | .home' "$record") \
+      "$SCRIPT_DIR/fm-spawn.sh" "$task" "$project" --mode "$mode" --yolo "$yolo" \
+      --mandate-id "$id" --mandate-member "$member" || return 1
+  done < <(jq -r '.members[].id' "$record")
 }
 
 query() {
@@ -140,6 +198,8 @@ case "$cmd" in
     file=$(record_for_id "$2") || die "unknown mandate: $2"
     [ "$file" = "$(proposal_file)" ] || die "mandate is not proposed: $2"
     mv "$file" "$(activating_file)"
+    release_lock
+    launch_members "$(activating_file)" || die "activation launch failed: $2"
     printf 'activating: %s\n' "$2"
     ;;
   launch-receipt)
@@ -148,11 +208,11 @@ case "$cmd" in
     if ! safe_id "$id" || ! safe_id "$member" || ! safe_id "$generation"; then
       die 'invalid receipt identity'
     fi
-    require_primary_writer
     acquire_lock
     file=$(record_for_id "$id") || die "unknown mandate: $id"
     [ "$file" = "$(activating_file)" ] || die "mandate is not activating: $id"
     jq -e --arg member "$member" '.members[] | select(.id == $member)' "$file" >/dev/null || die "unknown member: $member"
+    native_receipt_matches "$file" "$member" "$generation" || die 'native receipt does not match reviewed member'
     tmp=$(mktemp "$root/.receipt.XXXXXX") || die 'cannot update receipt'
     jq --arg member "$member" --arg generation "$generation" '(.members[] | select(.id == $member)).spawn_gen = $generation' "$file" > "$tmp"
     mv "$tmp" "$file"

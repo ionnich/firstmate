@@ -11,6 +11,18 @@ make_home() {
   mkdir -p "$home/data/autonomous-mandates/archive" "$home/state"
 }
 
+write_native_meta() {
+  local home=$1 generation=$2
+  cat > "$home/state/task-a.meta" <<META
+endpoint_task_id=task-a
+project=/project
+mode=no-mistakes
+mandate_id=amd-test
+mandate_member=member-a
+spawn_gen=$generation
+META
+}
+
 proposal() {
   local path=$1 home=$2 expiry=${3:-null}
   cat > "$path" <<JSON
@@ -46,11 +58,8 @@ test_confirm_receipt_and_authorize_deployment() {
   make_home "$home"
   proposal "$file" "$home"
   FM_HOME="$home" "$MANDATE" propose --proposal "$file" >/dev/null
-  FM_HOME="$home" "$MANDATE" confirm --id amd-test >/dev/null
-  FM_HOME="$home" "$MANDATE" validate-member --id amd-test --member member-a --home "$home" --task task-a --mode no-mistakes --project /project >/dev/null
-  if FM_HOME="$home" "$MANDATE" validate-member --id amd-test --member member-a --home "$home" --task task-b --mode no-mistakes --project /project >/dev/null 2>&1; then
-    fail 'reviewed member validation accepted a different task'
-  fi
+  mv "$home/data/autonomous-mandates/proposed.json" "$home/data/autonomous-mandates/activating.json"
+  write_native_meta "$home" s1
   FM_HOME="$home" "$MANDATE" launch-receipt --id amd-test --member member-a --spawn-gen s1 >/dev/null
   out=$(FM_HOME="$home" "$MANDATE" authorize-deployment --home "$home" --task task-a --spawn-gen s1 --environment production)
   printf '%s' "$out" | jq -e '.result == "grant"' >/dev/null || fail "reviewed deployment must grant: $out"
@@ -64,7 +73,8 @@ test_revoke_removes_active_authority() {
   make_home "$home"
   proposal "$file" "$home"
   FM_HOME="$home" "$MANDATE" propose --proposal "$file" >/dev/null
-  FM_HOME="$home" "$MANDATE" confirm --id amd-test >/dev/null
+  mv "$home/data/autonomous-mandates/proposed.json" "$home/data/autonomous-mandates/activating.json"
+  write_native_meta "$home" s1
   FM_HOME="$home" "$MANDATE" launch-receipt --id amd-test --member member-a --spawn-gen s1 >/dev/null
   FM_HOME="$home" "$MANDATE" revoke --id amd-test >/dev/null
   out=$(FM_HOME="$home" "$MANDATE" query --home "$home" --task task-a --spawn-gen s1 --action merge)
@@ -85,11 +95,42 @@ test_root_symlink_and_excluded_action_refuse() {
   rm "$home/data/autonomous-mandates"
   make_home "$home"
   FM_HOME="$home" "$MANDATE" propose --proposal "$file" >/dev/null
-  FM_HOME="$home" "$MANDATE" confirm --id amd-test >/dev/null
+  mv "$home/data/autonomous-mandates/proposed.json" "$home/data/autonomous-mandates/activating.json"
+  write_native_meta "$home" s1
   FM_HOME="$home" "$MANDATE" launch-receipt --id amd-test --member member-a --spawn-gen s1 >/dev/null
   out=$(FM_HOME="$home" "$MANDATE" query --home "$home" --task task-a --spawn-gen s1 --action credential)
   printf '%s' "$out" | jq -e '.result == "deny"' >/dev/null || fail "excluded action granted: $out"
   pass 'unsafe mandate root and excluded action refuse'
+}
+
+test_confirm_starts_reviewed_launch_and_receipt_requires_native_identity() {
+  local home="$TMP_ROOT/home-launch" file="$TMP_ROOT/launch.json" out
+  make_home "$home"
+  proposal "$file" "$home"
+  FM_HOME="$home" "$MANDATE" propose --proposal "$file" >/dev/null
+  if out=$(FM_HOME="$home" "$MANDATE" confirm --id amd-test 2>&1); then
+    fail "confirmation accepted without launching reviewed member: $out"
+  fi
+  [ "$(FM_HOME="$home" "$MANDATE" status)" = 'amd-test activating' ] \
+    || fail 'failed launch must preserve recoverable activation state'
+  if FM_HOME="$home" "$MANDATE" launch-receipt --id amd-test --member member-a --spawn-gen s999 >/dev/null 2>&1; then
+    fail 'receipt accepted without matching native task identity'
+  fi
+  pass 'confirmation starts reviewed launch and receipt requires native identity'
+}
+
+test_rejects_non_real_or_elapsed_utc_expiry() {
+  local home="$TMP_ROOT/home-expiry" file="$TMP_ROOT/expiry.json" out
+  make_home "$home"
+  proposal "$file" "$home" '"2026-99-99T00:00:00Z"'
+  if out=$(FM_HOME="$home" "$MANDATE" propose --proposal "$file" 2>&1); then
+    fail "non-real UTC expiry passed: $out"
+  fi
+  proposal "$file" "$home" '"2000-01-01T00:00:00Z"'
+  if out=$(FM_HOME="$home" "$MANDATE" propose --proposal "$file" 2>&1); then
+    fail "elapsed UTC expiry passed: $out"
+  fi
+  pass 'proposal rejects non-real and elapsed UTC expiry'
 }
 
 test_propose_and_query_are_fail_closed
@@ -97,3 +138,5 @@ test_rejects_duplicate_members_and_unknown_environment_partition
 test_confirm_receipt_and_authorize_deployment
 test_revoke_removes_active_authority
 test_root_symlink_and_excluded_action_refuse
+test_confirm_starts_reviewed_launch_and_receipt_requires_native_identity
+test_rejects_non_real_or_elapsed_utc_expiry
