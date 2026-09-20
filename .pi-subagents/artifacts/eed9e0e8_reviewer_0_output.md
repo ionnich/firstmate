@@ -1,0 +1,4 @@
+## Review
+- Blocker: `bin/fm-pr-merge.sh:913-958` adds mandate auth only for PR merges. `bin/fm-merge-local.sh` has no mandate query. Mandated `local-only` work cannot use approved landing authority.
+- Blocker: `bin/fm-autonomous-mandate.sh:11` defines `authorize-deployment`; no deployment seam calls it. Mandate cannot authorize deployment, despite exposed API.
+- Blocker: `docs/superpowers/plans/2026-09-20-autonomous-dispatch-mandate-implementation.md:23,44` requires held decisions use mandate flow. `bin/fm-captain-hold.sh` has no mandate integration. Autonomous mandate cannot resolve scoped holds.
