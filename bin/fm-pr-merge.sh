@@ -921,7 +921,7 @@ require_autonomous_dispatch_grant() {
     fm_lock_acquire_wait "$lock" || return 1
     MERGE_DISPATCH_LOCK=$lock
   fi
-  grant=$(FM_AUTONOMOUS_DISPATCH_LOCK_HELD=1 FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-autonomous-dispatch.sh" member \
+  grant=$(FM_AUTONOMOUS_DISPATCH_LOCK_HELD=1 "$SCRIPT_DIR/fm-autonomous-dispatch.sh" member \
     --home "$FM_HOME" --task "$ID" --spawn-gen "$generation" --action merge 2>/dev/null) || return 1
   if [ "$grant" != grant ]; then
     fm_lock_release "$MERGE_DISPATCH_LOCK" || true

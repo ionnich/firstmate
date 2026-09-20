@@ -79,6 +79,8 @@ answer() { # task generation decision-file
   id=$(jq -r .id "$active")
   tmp=$(mktemp "$root/.decision.XXXXXX")
   { cat "$decision"; printf '\nAuthority source: autonomous-dispatch:%s\n' "$id"; } > "$tmp"
+  # Captain-hold owns task control serialization. Do not invert it with dispatch lock.
+  release_lock
   FM_HOME="$caller_home" "$script_dir/fm-captain-hold.sh" answer "$task" --decision-file "$tmp" --release
   rm -f "$tmp"
 }
@@ -100,7 +102,9 @@ case "${1:-}" in
     mkdir -p "$root"
     acquire_lock
     [ ! -e "$active" ] && [ ! -e "$activating" ] || die 'an autonomous dispatch is already active or activating'
-    [ -f "$3" ] && [ ! -L "$3" ] && valid "$3" || die 'invalid reviewed autonomous dispatch record'
+    if [ ! -f "$3" ] || [ -L "$3" ] || ! valid "$3"; then
+      die 'invalid reviewed autonomous dispatch record'
+    fi
     if jq -e '.expires_at != null' "$3" >/dev/null; then
       expiry=$(utc_epoch "$(jq -r .expires_at "$3")") || die 'invalid dispatch expiry'
       [ "$expiry" -gt "$(date -u +%s)" ] || die 'dispatch expiry must be after approval'
@@ -129,6 +133,8 @@ case "${1:-}" in
     acquire_lock
     active_member "$3" "$5" "$7" deploy "$9" || die 'reviewed dispatch does not authorize this deployment'
     [ -x "${11}" ] && [ ! -L "${11}" ] || die 'deployment entrypoint must be an explicit regular executable'
+    # Submission passed final membership check. Revocation governs future handoffs.
+    release_lock
     exec "${@:11}"
     ;;
   answer)
@@ -143,6 +149,10 @@ case "${1:-}" in
     [ -f "$activating" ] && rm "$activating"
     printf '%s\n' "$1"
     ;;
-  status) [ -f "$active" ] && jq -r '.id' "$active" || { [ -f "$activating" ] && jq -r '.id + " activating"' "$activating" || printf 'none\n'; } ;;
+  status)
+    if [ -f "$active" ]; then jq -r '.id' "$active"
+    elif [ -f "$activating" ]; then jq -r '.id + " activating"' "$activating"
+    else printf 'none\n'; fi
+    ;;
   *) die 'usage: fm-autonomous-dispatch.sh <approve|member|handoff|answer|lock-path|revoke|end|status>' ;;
 esac
