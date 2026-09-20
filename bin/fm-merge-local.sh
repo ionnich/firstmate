@@ -126,6 +126,8 @@ case "$hold_status" in
     exit 1
     ;;
 esac
+FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-autonomous-dispatch.sh" member \
+  --home "$FM_HOME" --task "$ID" --spawn-gen "$MERGE_EXPECTED_SPAWN_GEN" --action merge >/dev/null 2>&1 || true
 merge_status=0
 git -C "$PROJ" merge --ff-only "$BRANCH" >/dev/null || merge_status=$?
 fm_lock_release "$MERGE_CONTROL_LOCK" || true

@@ -4,12 +4,31 @@ set -euo pipefail
 
 die() { printf '%s\n' "$*" >&2; exit 1; }
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-home=${FM_HOME:-}
-[ -n "$home" ] || die 'FM_HOME is required'
-home=$(cd "$home" 2>/dev/null && pwd -P) || die 'invalid FM_HOME'
+caller_home=${FM_HOME:-}
+[ -n "$caller_home" ] || die 'FM_HOME is required'
+caller_home=$(cd "$caller_home" 2>/dev/null && pwd -P) || die 'invalid FM_HOME'
+home=$caller_home
+# shellcheck source=bin/fm-secondmate-parent-lib.sh
+. "$script_dir/fm-secondmate-parent-lib.sh"
+# shellcheck source=bin/fm-wake-lib.sh
+. "$script_dir/fm-wake-lib.sh"
+if [ -e "$caller_home/.fm-secondmate-home" ] || [ -L "$caller_home/.fm-secondmate-home" ]; then
+  fm_secondmate_parent_record_parse "$caller_home/.fm-secondmate-parent" \
+    && [ "$FM_SECONDMATE_PARENT_ROUTE" = local ] \
+    || die 'local secondmate parent binding is required'
+  home=$(cd "$FM_SECONDMATE_PARENT_HOME" 2>/dev/null && pwd -P) || die 'invalid primary home'
+fi
 root="$home/data/autonomous-dispatch"
 active="$root/active.json"
 activating="$root/activating.json"
+lock="$root/.lock"
+lock_held=0
+release_lock() { [ "$lock_held" = 0 ] || fm_lock_release "$lock" || true; }
+trap release_lock EXIT
+acquire_lock() {
+  [ -d "$root" ] && [ ! -L "$root" ] || die 'invalid dispatch directory'
+  [ "${FM_AUTONOMOUS_DISPATCH_LOCK_HELD:-}" = 1 ] || { fm_lock_acquire_wait "$lock"; lock_held=1; }
+}
 
 utc_epoch() {
   local stamp=$1 epoch rendered
@@ -53,6 +72,17 @@ active_member() { # home task generation action [environment]
   ' "$active" >/dev/null
 }
 
+answer() { # task generation decision-file
+  local task=$1 generation=$2 decision=$3 tmp id
+  [ -f "$decision" ] && [ ! -L "$decision" ] || die 'invalid decision file'
+  active_member "$caller_home" "$task" "$generation" decision || die 'reviewed dispatch does not authorize this decision'
+  id=$(jq -r .id "$active")
+  tmp=$(mktemp "$root/.decision.XXXXXX")
+  { cat "$decision"; printf '\nAuthority source: autonomous-dispatch:%s\n' "$id"; } > "$tmp"
+  FM_HOME="$caller_home" "$script_dir/fm-captain-hold.sh" answer "$task" --decision-file "$tmp" --release
+  rm -f "$tmp"
+}
+
 record_receipt() { # member task
   local member=$1 task=$2 generation tmp
   generation=$(awk -F= '$1 == "spawn_gen" { print substr($0, index($0, "=") + 1); exit }' "$member/state/$task.meta")
@@ -68,6 +98,7 @@ case "${1:-}" in
     [ "${2:-}" = --record ] && [ -n "${3:-}" ] || die 'usage: approve --record FILE'
     [ ! -e "$root" ] || [ -d "$root" ] && [ ! -L "$root" ] || die 'invalid dispatch directory'
     mkdir -p "$root"
+    acquire_lock
     [ ! -e "$active" ] && [ ! -e "$activating" ] || die 'an autonomous dispatch is already active or activating'
     [ -f "$3" ] && [ ! -L "$3" ] && valid "$3" || die 'invalid reviewed autonomous dispatch record'
     if jq -e '.expires_at != null' "$3" >/dev/null; then
@@ -87,14 +118,31 @@ case "${1:-}" in
     [ "${2:-}" = --home ] && [ "${4:-}" = --task ] && [ "${6:-}" = --spawn-gen ] && [ "${8:-}" = --action ] || die 'usage: member --home HOME --task ID --spawn-gen GEN --action decision|merge|deploy [--environment NAME]'
     environment=
     [ "${10:-}" != --environment ] || environment=${11:-}
+    [ "$3" = "$caller_home" ] || { printf 'deny\n'; exit 1; }
+    acquire_lock
     active_member "$3" "$5" "$7" "$9" "$environment" || { printf 'deny\n'; exit 1; }
     printf 'grant\n'
     ;;
+  handoff)
+    [ "${2:-}" = --home ] && [ "${4:-}" = --task ] && [ "${6:-}" = --spawn-gen ] && [ "${8:-}" = --environment ] && [ "${10:-}" = -- ] && [ -n "${11:-}" ] || die 'usage: handoff --home HOME --task ID --spawn-gen GEN --environment NAME -- ENTRYPOINT [ARGS...]'
+    [ "$3" = "$caller_home" ] || die 'caller home mismatch'
+    acquire_lock
+    active_member "$3" "$5" "$7" deploy "$9" || die 'reviewed dispatch does not authorize this deployment'
+    [ -x "${11}" ] && [ ! -L "${11}" ] || die 'deployment entrypoint must be an explicit regular executable'
+    exec "${@:11}"
+    ;;
+  answer)
+    [ "${2:-}" = --task ] && [ "${4:-}" = --spawn-gen ] && [ "${6:-}" = --decision-file ] || die 'usage: answer --task ID --spawn-gen GEN --decision-file FILE'
+    acquire_lock
+    answer "$3" "$5" "$7"
+    ;;
+  lock-path) printf '%s\n' "$lock" ;;
   revoke|end)
+    acquire_lock
     [ -f "$active" ] && rm "$active"
     [ -f "$activating" ] && rm "$activating"
     printf '%s\n' "$1"
     ;;
   status) [ -f "$active" ] && jq -r '.id' "$active" || { [ -f "$activating" ] && jq -r '.id + " activating"' "$activating" || printf 'none\n'; } ;;
-  *) die 'usage: fm-autonomous-dispatch.sh <approve|member|revoke|end|status>' ;;
+  *) die 'usage: fm-autonomous-dispatch.sh <approve|member|handoff|answer|lock-path|revoke|end|status>' ;;
 esac
