@@ -34,7 +34,11 @@ Any non-default cap is displayed and approved as part of that reviewed dispatch.
 
 An exact captain instruction still outranks a mandate.
 
-A mandate never broadens a task's delivery mode, project posture, no-mistakes authority, captain-hold requirement, or existing approval needed outside its named authority categories.
+A mandate never broadens a task's delivery mode, project posture, no-mistakes authority, or existing approval needed outside its named authority categories.
+
+It never bypasses or deletes captain-hold lifecycle.
+
+For an in-scope decision it authorizes Firstmate to answer that lifecycle through its existing owner and record the answer.
 
 Absent, expired, revoked, malformed, unreadable, mismatched, or activating mandate state grants nothing.
 
@@ -93,7 +97,7 @@ The owner holds one primary-home mandate lock across every mutation and each act
   "primary_home": "/absolute/primary/home",
   "approved_at": "2026-09-20T12:00:00Z",
   "approved_by": "captain",
-  "expires_at": "2026-09-27T12:00:00Z",
+  "expires_at": null,
   "spend_cap": {"max_concurrent_workers": 4},
   "authority": {
     "routine_decisions": "best-judgment",
@@ -126,7 +130,11 @@ Before activation, member `home` and `task_id` identify exact reviewed native wo
 
 Activation records the native `spawn_gen` receipt, after which `home`, `task_id`, and `spawn_gen` form identity.
 
-Duplicate task ownership, unknown modes, blank reviewed revisions, invalid environments, an environment listed in both deployment lists, a discovered environment listed in neither list, cap values outside positive integers, and expiry at or before approval are invalid.
+Duplicate task ownership, unknown modes, blank reviewed revisions, invalid environments, an environment listed in both deployment lists, a discovered environment listed in neither list, cap values outside positive integers, and a finite expiry at or before approval are invalid.
+
+`expires_at` is an ISO 8601 timestamp or null.
+
+It is optional or null when review selects completion or explicit-cutoff termination only.
 
 The reviewed revision is dispatch-owned immutable source identity, not a task record replacement.
 
@@ -146,7 +154,7 @@ Archived records retain complete final state, revocation or expiry reason, membe
 
 ## Proposal, confirmation, and activation
 
-Assemble-dispatch produces a reviewed proposal with exact members, each member's reviewed revision, each member's environment list, cap, expiry, and explicitly bounded authority.
+Assemble-dispatch inventories every environment each reviewed task uses and produces a reviewed proposal with exact members, each member's reviewed revision, allowed and excluded environment lists, cap, optional expiry, and explicitly bounded authority.
 
 Review displays every member, its home, task identity, allowed and excluded deployment environments, cap, expiry, permitted actions, and permanent exclusions.
 
@@ -198,7 +206,11 @@ Action owners treat `deny` and `unavailable` identically for authority: no auton
 
 They may continue only under independent existing captain authority.
 
-Routine best judgment applies only to decisions native lifecycle would otherwise hold for captain approval and only when no permanent exclusion applies.
+Maximum best judgment covers every in-scope technical or product decision native lifecycle would otherwise hold for captain answer, except permanent exclusions and genuine scope expansion.
+
+For those decisions Firstmate answers through existing captain-hold lifecycle and records that answer through its existing owner.
+
+The mandate neither bypasses nor deletes the hold lifecycle.
 
 Every grant-consuming action appends a decision record with mandate id, member identity, action, result, timestamp, and existing action evidence pointer.
 
@@ -224,7 +236,11 @@ Deployment entrypoints must identify task identity and environment before deploy
 
 They query mandate authority for that exact environment and keep every existing deployment-specific check.
 
-Review lists every known environment used by each member task, including production when task uses production, unless the review records it in that member's excluded list.
+Assembly inventories every environment each member task uses, including production when task uses production.
+
+Review grants every inventoried environment unless it records that environment in the member's excluded list.
+
+A later-discovered environment requires new review because it was outside reviewed task-environment set.
 
 No later discovered environment, inferred target, credential operation, rollback, destructive migration, irreversible release, or security-sensitive choice is authorized by that list.
 
@@ -246,7 +262,9 @@ Remote grants, remote mandate reads, remote activation, and remote deployment au
 
 ## Expiry, revocation, completion, and archive
 
-Expiry is absolute at `expires_at` and requires no polling to take effect because every authority query checks it.
+When finite, expiry is absolute at `expires_at` and requires no polling to take effect because every authority query checks it.
+
+A null or omitted expiry leaves completion and explicit cutoff as mandate termination paths.
 
 Explicit captain revocation is immediate at confirmation of command receipt.
 
@@ -274,13 +292,15 @@ It is primary-owned.
 
 Local secondmate homes receive a read-only primary copy through existing inherited-local-material convergence, with same quarantine and byte-validation behavior used for `data/captain-shared.md`.
 
-Remote copies and remote opinion grants are excluded in version one.
+Remote opinion grants do not exist because opinions are advisory only.
+
+Remote secondmate homes receive read-only inherited opinion copies through existing convergence whenever that transport supports inherited local material.
 
 The primary file header states primary ownership, secondmate read-only status, advisory-only semantics, and route for discovered changes back to primary.
 
 Each opinion has one scoped entry containing scope, stance, strength, rationale, and last-confirmed date.
 
-Strength is one of `weak`, `moderate`, or `strong` and indicates confidence for judgment, not authority.
+Strength is one of `weak`, `default`, or `strong` and indicates confidence for judgment, not authority.
 
 Scope must name bounded affected project, domain, task class, or decision class.
 
