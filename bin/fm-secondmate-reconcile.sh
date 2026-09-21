@@ -91,6 +91,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/fm-secondmate-dormancy-lib.sh disable=SC1091
+. "$SCRIPT_DIR/fm-secondmate-dormancy-lib.sh"
 
 # One nudge per home per four hours.
 FM_RECONCILE_COOLDOWN_SECONDS=${FM_RECONCILE_COOLDOWN_SECONDS:-14400}
@@ -317,6 +319,7 @@ cmd_request() {
     [ -n "$target" ] || continue
     id=$(printf '%s' "$target" | jq -r '.id') || continue
     spawn_gen=$(printf '%s' "$target" | jq -r '.spawn_gen') || continue
+    fm_secondmate_is_dormant "$STATE" "$id" && continue
     host=$(printf '%s' "$target" | jq -r '.host') || continue
     key=$(request_target_key "$id") \
       || { rm -f -- "$tmp"; fail "cannot identify reconcile notify target"; }
@@ -463,6 +466,10 @@ cmd_notify() {
   local id sampled_spawn_gen sampled_host expected_remote_host kind path last age now delivered_at reconcile_lock control_lock meta meta_lock did send_rc
   while IFS=$'\037' read -r id sampled_spawn_gen sampled_host kind; do
     [ -n "${id:-}" ] || continue
+    if fm_secondmate_is_dormant "$STATE" "$id"; then
+      printf 'dormant: %s\n' "$id"
+      continue
+    fi
     path=$(nudge_path "$id")
     reconcile_lock="$STATE/.$id.reconcile.lock"
     if ! fm_lock_try_acquire "$reconcile_lock"; then
@@ -522,7 +529,7 @@ cmd_notify() {
     [ -n "$sampled_spawn_gen" ] || expected_remote_host=$sampled_host
     release_active_locks
     send_rc=0
-    FM_TASK_INBOX_LOCK_WAIT_SECS=0 FM_SEND_EXPECTED_SPAWN_GEN="$sampled_spawn_gen" \
+    FM_TASK_INBOX_LOCK_WAIT_SECS=0 FM_SEND_WAKE_DORMANT=0 FM_SEND_EXPECTED_SPAWN_GEN="$sampled_spawn_gen" \
       FM_SEND_EXPECTED_REMOTE_HOST="$expected_remote_host" \
       "$SCRIPT_DIR/fm-send.sh" "$id" --fire-and-forget "$did" \
       "$(reconcile_text)" >/dev/null 2>&1 || send_rc=$?

@@ -244,6 +244,8 @@ fi
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck source=bin/fm-task-inbox-lib.sh
 . "$SCRIPT_DIR/fm-task-inbox-lib.sh"
+# shellcheck source=bin/fm-secondmate-dormancy-lib.sh disable=SC1091
+. "$SCRIPT_DIR/fm-secondmate-dormancy-lib.sh"
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 
@@ -432,6 +434,28 @@ RAW_TARGET=$1
 fm_send_resolve_target "$RAW_TARGET" || exit 1
 T=$RESOLVED_TARGET
 shift
+if [ -n "$TARGET_META" ] && [ "$(fm_meta_get "$TARGET_META" kind)" = secondmate ]; then
+  TARGET_TASK_ID=$(fm_send_id_from_meta "$TARGET_META")
+  if fm_secondmate_is_dormant "$STATE" "$TARGET_TASK_ID"; then
+    if [ "${FM_SEND_WAKE_DORMANT:-1}" = 0 ]; then
+      echo "error: routine request refused for dormant secondmate $TARGET_TASK_ID" >&2
+      exit 1
+    fi
+    if [ "$TARGET_BACKEND" = remote ]; then
+      "$SCRIPT_DIR/fm-spawn.sh" "$TARGET_TASK_ID" --secondmate || {
+        echo "error: could not wake dormant secondmate $TARGET_TASK_ID" >&2
+        exit 1
+      }
+    else
+      "$SCRIPT_DIR/fm-spawn.sh" "$TARGET_TASK_ID" --relaunch || {
+        echo "error: could not wake dormant secondmate $TARGET_TASK_ID" >&2
+        exit 1
+      }
+    fi
+    fm_send_resolve_target "$RAW_TARGET" || exit 1
+    T=$RESOLVED_TARGET
+  fi
+fi
 
 # Supervision lease guard: a steer is overlap territory between the two Pi
 # supervision actors, so refuse while the OTHER actor holds this task's live

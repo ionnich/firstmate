@@ -244,6 +244,20 @@ Each secondmate is a firstmate in its own home, so it runs recovery on startup a
 A secondmate's recovery reconciles only work that is already its own and then idles.
 It never initiates a survey or audit during recovery.
 
+## Dormancy
+
+Keep a persistent secondmate home while stopping its idle endpoint:
+
+```sh
+bin/fm-secondmate-dormancy.sh <id> enter
+bin/fm-secondmate-dormancy.sh <id> leave
+```
+
+`enter` requires idle state, no child work, no open decision, and no unresolved routed reply.
+It writes `<id>.dormant` before stopping local or remote endpoint, so liveness recovery, routine sync, update, and reconcile skip it.
+An explicit routed request wakes dormant secondmate through `fm-send.sh`; `leave` performs same wake without sending work.
+Dormancy preserves home, backlog, knowledge, registry route, and metadata.
+
 ## Retirement and teardown
 
 A secondmate is persistent by default.

@@ -40,6 +40,8 @@
 SUB_HOME_MARKER="${SUB_HOME_MARKER:-.fm-secondmate-home}"
 # shellcheck source=bin/fm-secondmate-registry-lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-secondmate-registry-lib.sh"
+# shellcheck source=bin/fm-secondmate-dormancy-lib.sh disable=SC1091
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-secondmate-dormancy-lib.sh"
 
 # --- helpers ---------------------------------------------------------------
 
@@ -337,6 +339,7 @@ live_secondmate_meta_records() {
     [ -f "$meta" ] || continue
     grep -q '^kind=secondmate$' "$meta" 2>/dev/null || continue
     id=$(basename "$meta" .meta)
+    fm_secondmate_is_dormant "$state" "$id" && continue
     home=$(grep '^home=' "$meta" 2>/dev/null | tail -1 | cut -d= -f2- || true)
     if [ -z "$home" ] && [ -n "$registry" ]; then
       home=$(secondmate_registry_field "$registry" "$id" home || true)
@@ -514,10 +517,11 @@ FF_SEEN_HOMES=""
 #     forces, stashes, or discards its work. /updatefirstmate uses this hook to
 #     reach every live mate that is genuinely on the new bytes, including the
 #     ones that needed no advance to get there.
-# An undefined hook is simply not called.
 process_secondmate() {
   local id=$1 home=$2 window=${3:-} base_mode=$4 nudge_requires_instr=${5:-no} home_real fm_root_real
   [ -n "$id" ] || return 0
+  # An undefined hook is simply not called.
+  fm_secondmate_is_dormant "${FM_STATE_OVERRIDE:-$FM_HOME/state}" "$id" && return 0
   [ -n "$home" ] || return 0
   fm_root_real=$(resolve_path "$FM_ROOT")
   home_real=$(resolve_path "$home")

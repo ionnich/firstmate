@@ -4,6 +4,7 @@
 # Usage:
 #   fm-remote-secondmate-control.sh launch <id> <harness> <model|-> <effort|-> herdr [traceparent]
 #   fm-remote-secondmate-control.sh relaunch <id> <harness> <model|default|-> <effort|default|->
+#   fm-remote-secondmate-control.sh exit <id>
 #   fm-remote-secondmate-control.sh state <id>
 #   fm-remote-secondmate-control.sh route <id>
 #   fm-remote-secondmate-control.sh send <id> <message> [fire-and-forget]
@@ -65,6 +66,8 @@ REMOTE_HERDR_SESSION=fm-remote
 . "$SCRIPT_DIR/fm-pending-reply-lib.sh"
 # shellcheck source=bin/fm-task-inbox-lib.sh
 . "$SCRIPT_DIR/fm-task-inbox-lib.sh"
+# shellcheck source=bin/fm-busy-lib.sh disable=SC1091
+. "$SCRIPT_DIR/fm-busy-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 usage() { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
@@ -252,6 +255,36 @@ cmd_relaunch() {
     FM_SKIP_SECONDMATE_SYNC=1 \
     "$SCRIPT_DIR/fm-control.sh" "${control_args[@]}"
 }
+remote_dormancy_ready() {
+  local id=$1 meta verdict summary
+  meta=$(meta_path "$id")
+  verdict=$(fm_busy_classify_meta "$meta" "$id" "$CONTROL_STATE" 2>/dev/null || printf 'unknown')
+  case "${verdict%% *}" in
+    idle) ;;
+    *) die "remote secondmate $id is not idle (${verdict:-unknown})" ;;
+  esac
+  summary=$(FM_HOME="$TARGET_HOME" FM_ROOT_OVERRIDE="$TARGET_HOME" \
+    "$TARGET_HOME/bin/fm-fleet-snapshot.sh" --secondmate-home-summary 2>/dev/null) \
+    || die "remote secondmate $id home summary is unreadable"
+  printf '%s\n' "$summary" \
+    | jq -e '.state == "no_active_work" and (.active_children | length) == 0 and (.queued | length) == 0 and (.decisions_open | length) == 0' \
+    >/dev/null 2>&1 \
+    || die "remote secondmate $id has work or an open decision"
+}
+
+# Stop remote secondmate agent through ordinary local control.
+cmd_exit() {
+  local id=$1
+  validate_id "$id"
+  validate_home "$id"
+  remote_dormancy_ready "$id"
+  HERDR_SESSION="$REMOTE_HERDR_SESSION" FM_HOME="$FM_ROOT" FM_ROOT_OVERRIDE="$FM_ROOT" \
+    FM_STATE_OVERRIDE="$CONTROL_STATE" FM_DATA_OVERRIDE="$CONTROL_DATA" \
+    FM_CONFIG_OVERRIDE="$TARGET_HOME/config" FM_SKIP_SECONDMATE_INHERIT=1 \
+    FM_SKIP_SECONDMATE_SYNC=1 \
+    "$SCRIPT_DIR/fm-control.sh" "$id" exit
+}
+
 
 cmd_send() {
   local id=$1 message=$2 delivery_mode=${3:-} rec ring_rc=0 meta meta_lock
@@ -422,6 +455,7 @@ cmd_retire() {
 case "${1:-}" in
   launch) shift; [ "$#" -ge 5 ] && [ "$#" -le 6 ] || usage; cmd_launch "$@" ;;
   relaunch) shift; [ "$#" -eq 4 ] || usage; cmd_relaunch "$@" ;;
+  exit) shift; [ "$#" -eq 1 ] || usage; cmd_exit "$1" ;;
   state) shift; [ "$#" -eq 1 ] || usage; validate_id "$1"; validate_home "$1"; state_value "$1" ;;
   route) shift; [ "$#" -eq 1 ] || usage; cmd_route "$1" ;;
   send) shift; [ "$#" -ge 2 ] && [ "$#" -le 3 ] || usage; cmd_send "$@" ;;
