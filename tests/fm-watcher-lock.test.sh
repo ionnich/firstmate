@@ -193,6 +193,22 @@ test_guard_warnings() {
   [ ! -s "$err" ] || fail "guard warned with a live watcher and fresh beacon: $(cat "$err")"
   pass "guard banner leads when down with pending wakes (repair-after-drain) and stays silent when live and fresh"
 }
+test_lock_missing_parent_refuses_without_steal_recursion() {
+  local dir state lockdir rc
+  dir=$(make_case lock-missing-parent)
+  state="$dir/state"
+  lockdir="$dir/missing/.contend.lock"
+  rc=0
+  FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    fm_lock_try_acquire "$2"
+  ' _ "$LIB" "$lockdir" >/dev/null 2>&1 || rc=$?
+  [ "$rc" -ne 0 ] || fail "missing-parent lock was unexpectedly acquired"
+  [ ! -e "$dir/missing" ] || fail "missing-parent lock helper created its parent"
+  [ ! -e "$lockdir.steal" ] || fail "missing-parent lock helper recursed into .steal"
+  pass "lock acquisition rejects a missing parent without recursive steal paths"
+}
+
 
 test_lock_single_winner_under_concurrency() {
   local dir state lockdir marker i pids pid wins
@@ -1116,6 +1132,7 @@ test_stale_watch_lock_reclaimed
 test_stale_watch_reclaim_publishes_before_clear
 test_live_stale_watch_lock_is_actionable
 test_guard_warnings
+test_lock_missing_parent_refuses_without_steal_recursion
 test_lock_single_winner_under_concurrency
 test_lock_steals_dead_pid_lock
 test_lock_stale_steal_single_winner_under_concurrency

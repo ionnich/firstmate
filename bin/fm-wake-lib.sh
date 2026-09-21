@@ -918,6 +918,7 @@ fm_lock_try_acquire() {
   FM_LOCK_OWNER_DIR=
   FM_LOCK_RECOVERED_PID=
 
+  [ -d "$(dirname "$lockdir")" ] || return 1
   if fm_lock_try_create "$lockdir"; then
     return 0
   fi
