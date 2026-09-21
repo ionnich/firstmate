@@ -2,8 +2,9 @@
 # Shared data/projects.md registry-line helpers. Single owner of "read one
 # project's verbatim registry line" and "converge a secondmate's subset of
 # that registry against the primary's copy". Used by bin/fm-home-seed.sh (the
-# initial seed) and bin/fm-config-inherit-lib.sh (ongoing convergence at the
+# initial seed), bin/fm-config-inherit-lib.sh (ongoing convergence at the
 # bootstrap secondmate sweep, mid-session config push, and spawn pre-launch),
+# and bin/fm-remote-inherit.sh (the merge a remote route now receives),
 # so a project's registered posture can drift out of sync after seeding
 # without ever being silently re-obeyed (AGENTS.md section 6).
 #

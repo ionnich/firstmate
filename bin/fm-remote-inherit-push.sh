@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Push the declared inherited-material allowlist to one remote secondmate route.
+# Push the declared inherited-material allowlist and the project-registry merge
+# payload to one remote secondmate route.
 # Usage: fm-remote-inherit-push.sh <secondmate-id> <generation>
 #
 # The item set is derived from the ONE declared owner
