@@ -3367,3 +3367,48 @@ test_revealed_deferred_holds_show_their_deferral_reason
 test_pr_repository_cap_and_expansion
 test_per_repository_pr_cap_is_disclosed
 test_projection_and_toon_fail_closed
+test_projection_and_toon_fail_closed
+
+# A dormant mate is asleep on purpose: neither its own stopped endpoint nor the
+# stopped endpoints preserved inside its home are an unhealthy-endpoint report.
+test_dormant_mate_is_not_an_unhealthy_endpoint() {
+  local home mate fakebin baseline dormant
+  home=$(make_home dormant-unhealthy)
+  : > "$home/data/backlog.md"
+  : > "$home/data/secondmates.md"
+  mate="$TMP_ROOT/dormant-unhealthy-mate"
+  make_valid_secondmate_home asleep-mate "$mate"
+  append_secondmate_registry "$home" asleep-mate "$mate"
+  # The mate's own recorded endpoint no longer exists: the fixture fakebin fails
+  # display-message for *dead-*, the same read a stopped mate's pane produces.
+  fm_write_meta "$home/state/asleep-mate.meta" \
+    "window=firstmate:fm-dead-asleep-mate" \
+    "worktree=$mate" "project=$mate" "harness=codex" \
+    "kind=secondmate" "mode=secondmate" "home=$mate" "projects=sample"
+  # A child task kept inside the mate's preserved home is stopped as well.
+  {
+    head -n 1 "$mate/data/backlog.md"
+    printf -- '- [ ] dead-child - Stopped child work (repo: sample) (kind: ship)\n'
+    tail -n +2 "$mate/data/backlog.md"
+  } > "$mate/data/backlog.md.tmp"
+  mv "$mate/data/backlog.md.tmp" "$mate/data/backlog.md"
+  fm_write_meta "$mate/state/dead-child.meta" \
+    "window=firstmate:fm-dead-child" "worktree=$mate/projects/dead-child" \
+    "project=sample" "harness=claude" "kind=ship" "mode=no-mistakes"
+  fakebin=$(make_fakebin "$home")
+
+  baseline=$(run "$home" "$fakebin" --json)
+  printf '%s' "$baseline" | jq -e '
+    ([.unhealthy_endpoints[]? | select(.id == "asleep-mate")] | length) == 1
+      and ([.unhealthy_endpoints[]? | select(.id == "asleep-mate/dead-child")] | length) == 1
+  ' >/dev/null || fail "baseline did not expose the stopped mate and its stopped child: $baseline"
+
+  printf 'schema=fm-secondmate-dormancy.v1\n' > "$home/state/asleep-mate.dormant"
+  dormant=$(run "$home" "$fakebin" --json)
+  printf '%s' "$dormant" | jq -e '
+    ([.unhealthy_endpoints[]? | select(.id == "asleep-mate" or .id == "asleep-mate/dead-child")] | length) == 0
+  ' >/dev/null || fail "a dormant mate was still reported as an unhealthy endpoint: $dormant"
+  pass "dormant mate and its preserved home are excluded from unhealthy endpoints"
+}
+
+test_dormant_mate_is_not_an_unhealthy_endpoint
