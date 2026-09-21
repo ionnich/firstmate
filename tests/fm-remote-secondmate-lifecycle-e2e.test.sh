@@ -668,6 +668,34 @@ fi
 assert_grep "home: $REMOTE_HOME" "$PARENT/data/secondmates.md" "refused remote reassignment changed the durable route"
 pass "remote seed registers the route and provisions the whole home and project clone on that host"
 
+# Remote registry convergence sends the primary registry as a merge payload:
+# shared projects update, while a remote-home-only entry survives untouched.
+cat > "$PARENT/data/projects.md" <<'EOF'
+- alpha [direct-PR +yolo] - alpha project (added 2026-08-02)
+EOF
+cat >> "$REMOTE_HOME/data/projects.md" <<'EOF'
+- remote-local [direct-PR] - remote-only project (added 2026-08-02)
+EOF
+out=$(remote_env "$ROOT/bin/fm-remote-inherit-push.sh" ios 1 2>&1) \
+  || fail "remote inherited-material push refused project registry convergence"$'\n'"$out"
+assert_contains "$out" "pushed: data/projects.md" \
+  "remote registry convergence did not report a changed registry"
+assert_grep '- alpha [direct-PR +yolo]' "$REMOTE_HOME/data/projects.md" \
+  "remote registry kept stale primary project posture"
+assert_contains "$out" "SECONDMATE_SYNC: secondmate home $REMOTE_HOME: project registry for alpha converged to primary posture:" \
+  "remote registry convergence did not report the corrected posture"
+assert_grep '- remote-local [direct-PR] - remote-only project' "$REMOTE_HOME/data/projects.md" \
+  "remote registry clobbered a remote-home-only project"
+printf '%s\n' "$out" > "$TMP_ROOT/remote-registry-convergence.out"
+pass "remote registry convergence updates shared project posture without replacing local entries"
+
+out=$(remote_env "$ROOT/bin/fm-remote-inherit-push.sh" ios 1 2>&1) \
+  || fail "repeated remote inherited-material push failed"$'\n'"$out"
+printf '%s\n' "$out" > "$TMP_ROOT/remote-registry-repeat.out"
+assert_no_grep 'pushed: data/projects.md' "$TMP_ROOT/remote-registry-repeat.out" \
+  "repeated remote registry convergence reported a false change"
+pass "remote registry convergence is idempotent"
+
 PROTOCOL_HOME="$TMP_ROOT/protocol-home"
 mkdir -p "$PROTOCOL_HOME/config" "$PROTOCOL_HOME/data" "$PROTOCOL_HOME/state"
 printf 'complete inherited payload\n' > "$TMP_ROOT/inherit-complete"
