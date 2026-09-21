@@ -633,7 +633,7 @@ fi
 spawn_remote_secondmate() {
   local id=$1 remote host root home harness positional model effort backend out rc meta tmp
   local remote_backend remote_target remote_harness remote_herdr_session registry_lock remote_lock remote_generation
-  local remote_traceparent remote_recorded_traceparent sm_primary_head sync_out sync_rc
+  local remote_traceparent remote_recorded_traceparent sm_primary_head sync_out sync_rc inherit_out
   local -a launch_args
   id=${POS[0]:-}
   fm_task_id_creation_valid "$id" || { echo "error: invalid task id" >&2; return 2; }
@@ -784,8 +784,8 @@ spawn_remote_secondmate() {
     echo "error: remote secondmate $id inheritance generation could not be published" >&2
     return 1
   fi
-  if "$SCRIPT_DIR/fm-remote-inherit-push.sh" "$id" "$remote_generation" >/dev/null; then
-    :
+  if inherit_out=$("$SCRIPT_DIR/fm-remote-inherit-push.sh" "$id" "$remote_generation"); then
+    printf '%s\n' "$inherit_out" | grep '^SECONDMATE_SYNC:' || true
   else
     rc=$?
     fm_lock_release "$remote_lock" || true

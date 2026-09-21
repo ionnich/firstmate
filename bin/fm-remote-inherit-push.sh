@@ -113,8 +113,6 @@ while IFS= read -r rel; do
 done <<EOF
 $ITEMS
 EOF
-if [ -n "$PROJECT_REGISTRY_SNAPSHOT" ]; then
-  "$SCRIPT_DIR/fm-on.sh" --stdin "$ID" fm-remote-inherit.sh project-registry \
-    data/projects.md "$PROJECT_REGISTRY_BYTES" "$PROJECT_REGISTRY_HASH" "$GENERATION" \
-    < "$PROJECT_REGISTRY_SNAPSHOT"
-fi
+"$SCRIPT_DIR/fm-on.sh" --stdin "$ID" fm-remote-inherit.sh project-registry \
+  data/projects.md "$PROJECT_REGISTRY_BYTES" "$PROJECT_REGISTRY_HASH" "$GENERATION" \
+  < "$PROJECT_REGISTRY_SNAPSHOT"

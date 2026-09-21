@@ -746,8 +746,16 @@ launches_after_inherit=0
 [ "$launches_before_inherit" -eq "$launches_after_inherit" ] \
   || fail "remote spawn reached launch after ambiguous partial inheritance"
 assert_absent "$PARENT/state/ios.meta" "failed remote inheritance published launch metadata"
+# A remote spawn reports the registry drift it corrects, exactly like the local
+# convergence point does, instead of silently rewriting the remote posture.
+cat > "$REMOTE_HOME/data/projects.md" <<EOF
+- alpha [direct-PR] - alpha project (added 2026-08-02)
+- remote-local [direct-PR] - remote-only project (added 2026-08-02)
+EOF
 out=$(remote_env "$ROOT/bin/fm-spawn.sh" ios --secondmate)
 assert_contains "$out" 'remote=remote-mac backend=herdr' "remote spawn did not report separate host and backend dimensions"
+assert_contains "$out" "SECONDMATE_SYNC: secondmate home $REMOTE_HOME: project registry for alpha converged to primary posture: - alpha [direct-PR] - alpha project (added 2026-08-02) -> - alpha [direct-PR +yolo] - alpha project (added 2026-08-02)" \
+  "remote spawn silently corrected a drifted project registry"
 assert_grep 'remote_host=remote-mac' "$PARENT/state/ios.meta" "parent metadata omitted the remote host"
 assert_grep 'remote_backend=herdr' "$PARENT/state/ios.meta" "parent metadata omitted the remote-local backend"
 assert_grep 'remote_herdr_session=fm-remote' "$PARENT/state/ios.meta" "parent metadata omitted the pinned remote Herdr session"
@@ -953,8 +961,16 @@ assert_grep '"revision":2' "$REMOTE_HOME/config/crew-dispatch.json" "partial inh
 NUDGE_MARKER="$PARENT/state/.secondmate-nudge-pending/ios.pending"
 assert_grep 'remote=1' "$NUDGE_MARKER" "partial inheritance left no durable remote reread marker"
 publish_healthy_watcher_identity "$PARENT/state" "$PARENT" "$REMOTE_ROOT/bin/fm-watch.sh"
+# The locked startup sweep reports remote registry drift on its own stdout too.
+cat > "$REMOTE_HOME/data/projects.md" <<EOF
+- alpha [direct-PR] - alpha project (added 2026-08-02)
+- remote-local [direct-PR] - remote-only project (added 2026-08-02)
+EOF
 remote_env "$ROOT/bin/fm-bootstrap.sh" > "$TMP_ROOT/config-partial-retry.out" \
   || fail "bootstrap did not converge partial remote inheritance"
+assert_grep "SECONDMATE_SYNC: secondmate home $REMOTE_HOME: project registry for alpha converged to primary posture:" \
+  "$TMP_ROOT/config-partial-retry.out" \
+  "bootstrap silently corrected a drifted project registry"
 [ "$(cat "$REMOTE_HOME/config/crew-harness")" = grok ] \
   || fail "bootstrap did not apply the remaining inherited file"
 assert_absent "$NUDGE_MARKER" "bootstrap cleared no remote reread marker after convergence"
