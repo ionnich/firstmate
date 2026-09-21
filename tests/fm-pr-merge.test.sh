@@ -2721,6 +2721,7 @@ test_missing_autonomous_dispatch_directory_does_not_block_yolo_merge() {
   mkdir -p "$case_dir/wt"
   add_gh_mocks "$case_dir" "$head"
   printf '\nspawn_gen=fixture-task-x1\nyolo=on\n' >> "$case_dir/state/task-x1.meta"
+  write_away_record "$case_dir"
   [ ! -e "$case_dir/home/data/autonomous-dispatch" ] \
     || fail "autonomous-dispatch-directory-missing: fixture unexpectedly created dispatch state"
   set +e
@@ -2730,6 +2731,8 @@ test_missing_autonomous_dispatch_directory_does_not_block_yolo_merge() {
   set -e
   expect_code 0 "$rc" "autonomous-dispatch-directory-missing: yolo merge should succeed"
   assert_logged_gh_merge "$case_dir" 82 example/repo --squash
+  assert_grep "merge landed: task-x1 $url yolo" "$case_dir/state/.wake-queue" \
+    "autonomous-dispatch-directory-missing: merge did not use yolo authority"
   [ ! -e "$case_dir/home/data/autonomous-dispatch" ] \
     || fail "autonomous-dispatch-directory-missing: merge created dispatch state"
   pass "a missing autonomous-dispatch directory does not block a generation-bound yolo merge"

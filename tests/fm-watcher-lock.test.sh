@@ -194,16 +194,22 @@ test_guard_warnings() {
   pass "guard banner leads when down with pending wakes (repair-after-drain) and stays silent when live and fresh"
 }
 test_lock_missing_parent_refuses_without_steal_recursion() {
-  local dir state lockdir rc
+  local dir state lockdir marker rc
   dir=$(make_case lock-missing-parent)
   state="$dir/state"
   lockdir="$dir/missing/.contend.lock"
+  marker="$dir/create-called"
   rc=0
-  FM_STATE_OVERRIDE="$state" bash -c '
+  FM_TEST_LOCK_CREATE_MARKER="$marker" FM_STATE_OVERRIDE="$state" bash -c '
     . "$1"
+    fm_lock_try_create() {
+      : > "$FM_TEST_LOCK_CREATE_MARKER"
+      return 0
+    }
     fm_lock_try_acquire "$2"
   ' _ "$LIB" "$lockdir" >/dev/null 2>&1 || rc=$?
   [ "$rc" -ne 0 ] || fail "missing-parent lock was unexpectedly acquired"
+  [ ! -e "$marker" ] || fail "missing-parent lock helper attempted lock creation"
   [ ! -e "$dir/missing" ] || fail "missing-parent lock helper created its parent"
   [ ! -e "$lockdir.steal" ] || fail "missing-parent lock helper recursed into .steal"
   pass "lock acquisition rejects a missing parent without recursive steal paths"
