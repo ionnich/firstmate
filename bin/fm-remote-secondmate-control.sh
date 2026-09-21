@@ -66,8 +66,6 @@ REMOTE_HERDR_SESSION=fm-remote
 . "$SCRIPT_DIR/fm-pending-reply-lib.sh"
 # shellcheck source=bin/fm-task-inbox-lib.sh
 . "$SCRIPT_DIR/fm-task-inbox-lib.sh"
-# shellcheck source=bin/fm-busy-lib.sh disable=SC1091
-. "$SCRIPT_DIR/fm-busy-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 usage() { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
@@ -255,14 +253,13 @@ cmd_relaunch() {
     FM_SKIP_SECONDMATE_SYNC=1 \
     "$SCRIPT_DIR/fm-control.sh" "${control_args[@]}"
 }
+# Idle gate for a dormancy entry, run on the mate's own host so the answer comes
+# from the home that owns the work. The signal is the secondmate home summary,
+# never the busy classifier: a secondmate arms no busy-state wiring because an
+# idle secondmate pane is healthy by design (bin/fm-busy-lib.sh), so a busy
+# verdict here would report unknown for every healthy mate.
 remote_dormancy_ready() {
-  local id=$1 meta verdict summary
-  meta=$(meta_path "$id")
-  verdict=$(fm_busy_classify_meta "$meta" "$id" "$CONTROL_STATE" 2>/dev/null || printf 'unknown')
-  case "${verdict%% *}" in
-    idle) ;;
-    *) die "remote secondmate $id is not idle (${verdict:-unknown})" ;;
-  esac
+  local id=$1 summary
   summary=$(FM_HOME="$TARGET_HOME" FM_ROOT_OVERRIDE="$TARGET_HOME" \
     "$TARGET_HOME/bin/fm-fleet-snapshot.sh" --secondmate-home-summary 2>/dev/null) \
     || die "remote secondmate $id home summary is unreadable"
@@ -272,12 +269,22 @@ remote_dormancy_ready() {
     || die "remote secondmate $id has work or an open decision"
 }
 
-# Stop remote secondmate agent through ordinary local control.
+# Stop remote secondmate agent through ordinary local control. An endpoint that
+# is positively GONE has no agent to stop, and the local exit verb refuses that
+# state rather than reporting a stop it cannot prove, so dormancy accepts it:
+# preventing an unwanted respawn is exactly what dormancy is for.
 cmd_exit() {
-  local id=$1
+  local id=$1 meta state
   validate_id "$id"
   validate_home "$id"
   remote_dormancy_ready "$id"
+  meta=$(meta_path "$id")
+  if [ ! -f "$meta" ]; then
+    return 0
+  fi
+  remote_endpoint_require "$id"
+  state=$(fm_backend_agent_state "$REMOTE_ENDPOINT_BACKEND" "$REMOTE_ENDPOINT_TARGET" 2>/dev/null || printf 'unreadable')
+  [ "$state" != missing ] || return 0
   HERDR_SESSION="$REMOTE_HERDR_SESSION" FM_HOME="$FM_ROOT" FM_ROOT_OVERRIDE="$FM_ROOT" \
     FM_STATE_OVERRIDE="$CONTROL_STATE" FM_DATA_OVERRIDE="$CONTROL_DATA" \
     FM_CONFIG_OVERRIDE="$TARGET_HOME/config" FM_SKIP_SECONDMATE_INHERIT=1 \

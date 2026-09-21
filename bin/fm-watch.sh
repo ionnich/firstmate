@@ -173,6 +173,11 @@ mkdir -p "$STATE"
 # watcher reads only its presence (afk_record_present below).
 # shellcheck source=bin/fm-afk-contract.sh
 . "$SCRIPT_DIR/fm-afk-contract.sh"
+# A deliberately sleeping secondmate is not a stalled one: the secondmate
+# wake-loop check below reads the dormancy marker rather than re-deriving its
+# path, so bin/fm-secondmate-dormancy-lib.sh stays the one owner of that record.
+# shellcheck source=bin/fm-secondmate-dormancy-lib.sh
+. "$SCRIPT_DIR/fm-secondmate-dormancy-lib.sh"
 
 WATCH_LOCK="$STATE/.watch.lock"
 WATCH_PATH="$SCRIPT_DIR/fm-watch.sh"
@@ -785,6 +790,17 @@ secondmate_wake_stall_tick() {
     marker="$STATE/.secondmate-wake-stall-$task"
     progress_marker="$STATE/.secondmate-wake-progress-$task"
     receipt_dir="$STATE/.secondmate-wake-stall-receipts/$task"
+    # A sleeping mate's stopped watcher cannot advance its queue, so a row left
+    # there when it went to sleep would read as a permanent stall and escalate
+    # against a mate that was put to sleep on purpose. Drop the episode instead.
+    if fm_secondmate_is_dormant "$STATE" "$task"; then
+      rm -f "$marker" "$progress_marker"
+      if [ -e "$receipt_dir" ] || [ -L "$receipt_dir" ]; then
+        [ -d "$receipt_dir" ] && [ ! -L "$receipt_dir" ] || return 1
+        rm -rf -- "$receipt_dir" || return 1
+      fi
+      continue
+    fi
     if [ -z "$row" ]; then
       rm -f "$marker" "$progress_marker"
       if [ -e "$receipt_dir" ] || [ -L "$receipt_dir" ]; then

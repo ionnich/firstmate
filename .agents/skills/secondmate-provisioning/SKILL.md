@@ -2,8 +2,8 @@
 name: secondmate-provisioning
 description: >-
   Agent-only reference for persistent secondmate setup and retirement.
-  Use when creating, seeding, validating, launching, recovering, handing backlog to, pushing inherited local material into, or retiring a secondmate home, or when editing data/secondmates.md.
-  Covers local leases, whole-home remote routes, transactional seeding, record intake for an existing or inherited domain, project clone restrictions, secondmate harness pins, inherited local-material push, idle charter, handoff helper, and teardown safety.
+  Use when creating, seeding, validating, launching, recovering, sleeping, waking, handing backlog to, pushing inherited local material into, or retiring a secondmate home, or when editing data/secondmates.md.
+  Covers local leases, whole-home remote routes, transactional seeding, record intake for an existing or inherited domain, project clone restrictions, secondmate harness pins, inherited local-material push, idle charter, dormancy, handoff helper, and teardown safety.
 user-invocable: false
 metadata:
   internal: true
@@ -11,7 +11,7 @@ metadata:
 
 # secondmate-provisioning
 
-Use this reference before creating, seeding, validating, launching, handing backlog to, recovering, pushing inherited local material into, or retiring a persistent secondmate, and before editing `data/secondmates.md`.
+Use this reference before creating, seeding, validating, launching, handing backlog to, recovering, sleeping, waking, pushing inherited local material into, or retiring a persistent secondmate, and before editing `data/secondmates.md`.
 
 Keep the always-inline routing rules in `AGENTS.md` authoritative: route by natural-language `scope:`, local-only projects stay with the main firstmate, and secondmates are idle by default.
 
@@ -246,17 +246,18 @@ It never initiates a survey or audit during recovery.
 
 ## Dormancy
 
-Keep a persistent secondmate home while stopping its idle endpoint:
+Sleep an idle persistent secondmate without retiring it, so a registered-but-idle home costs nothing to keep:
 
 ```sh
 bin/fm-secondmate-dormancy.sh <id> enter
 bin/fm-secondmate-dormancy.sh <id> leave
 ```
 
-`enter` requires idle state, no child work, no open decision, and no unresolved routed reply.
-It writes `<id>.dormant` before stopping local or remote endpoint, so liveness recovery, routine sync, update, and reconcile skip it.
-An explicit routed request wakes dormant secondmate through `fm-send.sh`; `leave` performs same wake without sending work.
-Dormancy preserves home, backlog, knowledge, registry route, and metadata.
+Dormancy stops the agent only, preserving the home, backlog, knowledge, registry route, and metadata; it is not a retirement path.
+An entry is refused unless the mate's own home reports no active child work, no queued item, and no open decision, and this home holds no unresolved routed reply.
+An explicit routed request still wakes a sleeping mate, while routine machinery never does: config push, reconcile, and reply recovery leave it asleep.
+A stop that cannot be proven withdraws the marker again, so a mate is never recorded asleep while it is still running.
+`bin/fm-secondmate-dormancy.sh`'s header owns the marker, the wake path, and these refusals.
 
 ## Retirement and teardown
 

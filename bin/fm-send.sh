@@ -434,28 +434,6 @@ RAW_TARGET=$1
 fm_send_resolve_target "$RAW_TARGET" || exit 1
 T=$RESOLVED_TARGET
 shift
-if [ -n "$TARGET_META" ] && [ "$(fm_meta_get "$TARGET_META" kind)" = secondmate ]; then
-  TARGET_TASK_ID=$(fm_send_id_from_meta "$TARGET_META")
-  if fm_secondmate_is_dormant "$STATE" "$TARGET_TASK_ID"; then
-    if [ "${FM_SEND_WAKE_DORMANT:-1}" = 0 ]; then
-      echo "error: routine request refused for dormant secondmate $TARGET_TASK_ID" >&2
-      exit 1
-    fi
-    if [ "$TARGET_BACKEND" = remote ]; then
-      "$SCRIPT_DIR/fm-spawn.sh" "$TARGET_TASK_ID" --secondmate || {
-        echo "error: could not wake dormant secondmate $TARGET_TASK_ID" >&2
-        exit 1
-      }
-    else
-      "$SCRIPT_DIR/fm-spawn.sh" "$TARGET_TASK_ID" --relaunch || {
-        echo "error: could not wake dormant secondmate $TARGET_TASK_ID" >&2
-        exit 1
-      }
-    fi
-    fm_send_resolve_target "$RAW_TARGET" || exit 1
-    T=$RESOLVED_TARGET
-  fi
-fi
 
 # Supervision lease guard: a steer is overlap territory between the two Pi
 # supervision actors, so refuse while the OTHER actor holds this task's live
@@ -715,6 +693,29 @@ fm_send_feed_resolved_holds() {  # <answer-text>
 # target_ready path before sending, while zellij verifies pane labels in its
 # send implementation. A failed backend send is still surfaced below as a hard
 # error with the attempted resolution attached.
+
+# A dormant secondmate is woken here rather than at resolution time, because
+# waking it starts an agent: it is a durable side effect, so it must follow the
+# argument validation above, exactly like every other mutation in this script.
+# The target is re-resolved afterwards so T names the endpoint the wake created.
+# Routine machinery passes FM_SEND_WAKE_DORMANT=0 and refuses instead, so only a
+# real request ever pays for a cold start.
+if [ -n "$TARGET_META" ] && [ "$(fm_meta_get "$TARGET_META" kind)" = secondmate ]; then
+  TARGET_TASK_ID=$(fm_send_id_from_meta "$TARGET_META")
+  if fm_secondmate_is_dormant "$STATE" "$TARGET_TASK_ID"; then
+    if [ "${FM_SEND_WAKE_DORMANT:-1}" = 0 ]; then
+      echo "error: routine request refused for dormant secondmate $TARGET_TASK_ID" >&2
+      exit 1
+    fi
+    if ! fm_secondmate_dormancy_wake "$STATE" "$TARGET_TASK_ID"; then
+      echo "error: could not wake dormant secondmate $TARGET_TASK_ID to deliver this request" >&2
+      exit 1
+    fi
+    fm_secondmate_dormancy_clear "$STATE" "$TARGET_TASK_ID" || true
+    fm_send_resolve_target "$RAW_TARGET" || exit 1
+    T=$RESOLVED_TARGET
+  fi
+fi
 
 if [ "${1:-}" = "--key" ]; then
   [ -z "$FIRE_AND_FORGET_ID" ] \
