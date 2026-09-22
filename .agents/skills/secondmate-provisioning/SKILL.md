@@ -256,7 +256,7 @@ bin/fm-secondmate-dormancy.sh <id> leave
 Dormancy stops the agent only, preserving the home, backlog, knowledge, registry route, and metadata; it is not a retirement path.
 An entry is refused unless the mate's own home reports a settled summary with no active child work, no queued item, and no open decision, and this home holds no unresolved routed reply.
 An explicit routed request still wakes a sleeping mate, while routine machinery never does: config push, reconcile, and reply recovery leave it asleep.
-The marker is written only after a stop is proven, so a mate is never recorded asleep while it is still running.
+The marker is written only after a stop is proven and the endpoint reads confirmed stopped (`dead` or `missing`), so a mate is never recorded asleep while it is still running.
 `bin/fm-secondmate-dormancy.sh`'s header owns the marker, the wake path, and these refusals.
 
 ## Retirement and teardown

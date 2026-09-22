@@ -694,6 +694,31 @@ fm_send_feed_resolved_holds() {  # <answer-text>
 # send implementation. A failed backend send is still surfaced below as a hard
 # error with the attempted resolution attached.
 
+# Deterministic rejections run before the wake below: waking a dormant mate
+# starts an agent, so an invocation that is going to be refused must not pay for
+# that cold start, nor undo the operator's dormancy.
+if [ "${1:-}" = "--key" ]; then
+  [ -z "$FIRE_AND_FORGET_ID" ] \
+    || { echo "error: --fire-and-forget cannot accompany --key" >&2; exit 1; }
+  case "$*" in
+    *--resolve-key*)
+      echo "error: --resolve-key cannot accompany --key; answering a decision requires a text answer" >&2
+      exit 1
+      ;;
+  esac
+  [ "$#" -ge 2 ] && [ -n "${2:-}" ] \
+    || { echo "error: --key requires a key name" >&2; exit 1; }
+fi
+if [ "$TARGET_BACKEND" = remote ]; then
+  FM_SEND_REMOTE_BUDGET=${FM_SEND_REMOTE_BUDGET:-30}
+  case "$FM_SEND_REMOTE_BUDGET" in
+    ''|*[!0-9]*|0)
+      echo "error: FM_SEND_REMOTE_BUDGET must be a positive integer: $FM_SEND_REMOTE_BUDGET" >&2
+      exit 1
+      ;;
+  esac
+fi
+
 # A dormant secondmate is woken here rather than at resolution time, because
 # waking it starts an agent: it is a durable side effect, so it must follow the
 # argument validation above, exactly like every other mutation in this script.
@@ -721,24 +746,9 @@ if [ -n "$TARGET_META" ] && [ "$(fm_meta_get "$TARGET_META" kind)" = secondmate 
 fi
 
 if [ "${1:-}" = "--key" ]; then
-  [ -z "$FIRE_AND_FORGET_ID" ] \
-    || { echo "error: --fire-and-forget cannot accompany --key" >&2; exit 1; }
-  case "$*" in
-    *--resolve-key*)
-      echo "error: --resolve-key cannot accompany --key; answering a decision requires a text answer" >&2
-      exit 1
-      ;;
-  esac
   key=$2
   semantic_key=$(fm_send_normalize_key "$key")
   if [ "$TARGET_BACKEND" = remote ]; then
-    FM_SEND_REMOTE_BUDGET=${FM_SEND_REMOTE_BUDGET:-30}
-    case "$FM_SEND_REMOTE_BUDGET" in
-      ''|*[!0-9]*|0)
-        echo "error: FM_SEND_REMOTE_BUDGET must be a positive integer: $FM_SEND_REMOTE_BUDGET" >&2
-        exit 1
-        ;;
-    esac
     if ! fm_run_timed "$FM_SEND_REMOTE_BUDGET" "$SCRIPT_DIR/fm-on.sh" "$TARGET_REMOTE_ID" \
       fm-remote-secondmate-control.sh key "$TARGET_REMOTE_ID" "$key" < /dev/null; then
       echo "error: key '$key' not sent to remote secondmate $TARGET_REMOTE_ID; completion may be unknown" >&2
@@ -752,15 +762,6 @@ if [ "${1:-}" = "--key" ]; then
   fm_send_record_interrupt "$semantic_key" || exit 1
 else
   MESSAGE=$*
-  if [ "$TARGET_BACKEND" = remote ]; then
-    FM_SEND_REMOTE_BUDGET=${FM_SEND_REMOTE_BUDGET:-30}
-    case "$FM_SEND_REMOTE_BUDGET" in
-      ''|*[!0-9]*|0)
-        echo "error: FM_SEND_REMOTE_BUDGET must be a positive integer: $FM_SEND_REMOTE_BUDGET" >&2
-        exit 1
-        ;;
-    esac
-  fi
   # The pre-marker answer text, kept for the closing resolved note so the
   # durable ledger records the plain answer without marker or corr bytes.
   RESOLVE_ANSWER_TEXT=$MESSAGE

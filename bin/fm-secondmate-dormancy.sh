@@ -18,10 +18,13 @@
 # pane is healthy by design (bin/fm-busy-lib.sh).
 #
 # The endpoint is stopped FIRST, and the marker published only once that stop is
-# proven: a mate is never marked asleep while it is still running, the state that
-# would both hide a live agent from routine sync and make a later routed request
-# fail. A stop that cannot be proven leaves no marker at all, so dormancy is
-# simply lost rather than misreported.
+# proven AND the endpoint reads confirmed stopped: `dead` or `missing`, the two
+# states that license recovery (bin/fm-backend.sh). Alive, ambiguous, unreadable
+# and unverified reads all refuse, as does a remote endpoint that cannot be
+# probed, so a mate is never marked asleep while it is still running - the state
+# that would both hide a live agent from routine sync and make a later routed
+# request fail. A stop that cannot be proven leaves no marker at all, so dormancy
+# is simply lost rather than misreported.
 #
 # A routed request still wakes a dormant mate: bin/fm-send.sh wakes it before
 # delivering. Routine machinery (config push, reconcile, reply recovery) passes
@@ -138,16 +141,32 @@ endpoint_already_gone() {
   [ "$(fm_backend_agent_state "$backend" "$target" 2>/dev/null || printf 'unreadable')" = missing ]
 }
 
-# The converse of endpoint_already_gone: a mate that is provably alive. A
-# concurrent liveness sweep can respawn a mate in the window after its stop, so
-# the marker is only recorded once this says no.
-endpoint_provably_alive() {
-  local backend target
-  [ -f "$META" ] && [ ! -L "$META" ] || return 1
+# Dormancy may be recorded only for an endpoint that is confirmed stopped. `dead`
+# and `missing` are the only states that license recovery (bin/fm-backend.sh), so
+# they are the only states that license dormancy; alive, ambiguous, unreadable and
+# unverified all describe an endpoint that may still be running. A recorded
+# endpoint with no usable target cannot be confirmed either. No endpoint record
+# at all means there is no agent to run, the single confirmed-stopped case by
+# construction. A remote mate is probed on its own host through the remote
+# control script's state verb, and an unprobeable remote endpoint refuses.
+endpoint_confirmed_stopped() {
+  local backend target state
+  [ -f "$META" ] && [ ! -L "$META" ] || return 0
+  if [ -n "$remote_host" ]; then
+    state=$("$SCRIPT_DIR/fm-on.sh" "$ID" fm-remote-secondmate-control.sh state "$ID" < /dev/null 2>/dev/null | tail -1) || state=
+    case "$state" in
+      dead|missing) return 0 ;;
+      *) return 1 ;;
+    esac
+  fi
   backend=$(fm_backend_of_meta "$META")
   target=$(fm_backend_target_of_meta "$META")
   [ -n "$target" ] || return 1
-  [ "$(fm_backend_agent_state "$backend" "$target" 2>/dev/null || printf 'unreadable')" = alive ]
+  state=$(fm_backend_agent_state "$backend" "$target" 2>/dev/null || printf 'unreadable')
+  case "$state" in
+    dead|missing) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 LOCK="$STATE/.dormancy-$ID.lock"
@@ -176,8 +195,8 @@ if [ "$ACTION" = enter ]; then
     fi
     exit 1
   fi
-  if [ -z "$remote_host" ] && endpoint_provably_alive; then
-    echo "error: secondmate $ID is running again after its stop; it is NOT dormant" >&2
+  if ! endpoint_confirmed_stopped; then
+    echo "error: secondmate $ID endpoint is not confirmed stopped; it is NOT dormant" >&2
     exit 1
   fi
   fm_secondmate_dormancy_mark "$STATE" "$ID" \
@@ -187,12 +206,12 @@ if [ "$ACTION" = enter ]; then
   # was just stopped mid-turn. Waking it back up restores the recovery path, and
   # the durable steering record is re-rung from the mate's own inbox.
   if pending_reply_exists; then
-    fm_secondmate_dormancy_wake "$STATE" "$ID" || true
     if ! fm_secondmate_dormancy_clear "$STATE" "$ID"; then
-      echo "error: secondmate $ID is awake but its dormancy marker could not be cleared" >&2
+      echo "error: secondmate $ID dormancy marker could not be cleared for the request that arrived during its stop" >&2
       exit 1
     fi
-    echo "error: a routed request arrived while secondmate $ID was being stopped; it is awake again and the request will be re-delivered from its inbox" >&2
+    fm_secondmate_dormancy_wake "$STATE" "$ID" || true
+    echo "error: a routed request arrived while secondmate $ID was being stopped; the request will be re-delivered from its inbox" >&2
     exit 1
   fi
   printf 'dormant: %s\n' "$ID"
