@@ -711,7 +711,10 @@ if [ -n "$TARGET_META" ] && [ "$(fm_meta_get "$TARGET_META" kind)" = secondmate 
       echo "error: could not wake dormant secondmate $TARGET_TASK_ID to deliver this request" >&2
       exit 1
     fi
-    fm_secondmate_dormancy_clear "$STATE" "$TARGET_TASK_ID" || true
+    if ! fm_secondmate_dormancy_clear "$STATE" "$TARGET_TASK_ID"; then
+      echo "error: dormant secondmate $TARGET_TASK_ID is awake but its dormancy marker could not be cleared" >&2
+      exit 1
+    fi
     fm_send_resolve_target "$RAW_TARGET" || exit 1
     T=$RESOLVED_TARGET
   fi

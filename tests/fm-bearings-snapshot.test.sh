@@ -3367,8 +3367,6 @@ test_revealed_deferred_holds_show_their_deferral_reason
 test_pr_repository_cap_and_expansion
 test_per_repository_pr_cap_is_disclosed
 test_projection_and_toon_fail_closed
-test_projection_and_toon_fail_closed
-
 # A dormant mate is asleep on purpose: neither its own stopped endpoint nor the
 # stopped endpoints preserved inside its home are an unhealthy-endpoint report.
 test_dormant_mate_is_not_an_unhealthy_endpoint() {
@@ -3408,6 +3406,10 @@ test_dormant_mate_is_not_an_unhealthy_endpoint() {
   printf '%s' "$dormant" | jq -e '
     ([.unhealthy_endpoints[]? | select(.id == "asleep-mate" or .id == "asleep-mate/dead-child")] | length) == 0
   ' >/dev/null || fail "a dormant mate was still reported as an unhealthy endpoint: $dormant"
+  projected=$(run "$home" "$fakebin" --json --fields endpoints)
+  printf '%s' "$projected" | jq -e '
+    ([.endpoints[]? | select(.id == "asleep-mate") | .dormant] == [true])
+  ' >/dev/null || fail "the endpoints projection dropped the dormancy read: $projected"
   pass "dormant mate and its preserved home are excluded from unhealthy endpoints"
 }
 

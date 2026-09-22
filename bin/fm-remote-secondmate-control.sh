@@ -264,7 +264,7 @@ remote_dormancy_ready() {
     "$TARGET_HOME/bin/fm-fleet-snapshot.sh" --secondmate-home-summary 2>/dev/null) \
     || die "remote secondmate $id home summary is unreadable"
   printf '%s\n' "$summary" \
-    | jq -e '.state == "no_active_work" and (.active_children | length) == 0 and (.queued | length) == 0 and (.decisions_open | length) == 0' \
+    | jq -e '.valid == true and .state == "no_active_work" and (.active_children | length) == 0 and (.queued | length) == 0 and (.decisions_open | length) == 0' \
     >/dev/null 2>&1 \
     || die "remote secondmate $id has work or an open decision"
 }

@@ -1063,8 +1063,6 @@ test_scout_reports_include_teardown_reports
 test_backlog_tasks_axi_forms_and_overrides
 test_view_renders_snapshot
 test_view_renders_dead_secondmate_agent_status
-test_view_renders_dead_secondmate_agent_status
-
 # A deliberately asleep mate stops its pane on purpose. The snapshot must say so
 # and the human view must not render it as a dead agent awaiting recovery.
 test_view_renders_dormant_secondmate_asleep() {
