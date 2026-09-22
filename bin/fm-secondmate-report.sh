@@ -125,11 +125,12 @@ if [ "$DOC_MODE" = 1 ]; then
   shift
   NOTE=$*
   if [ -n "$NOTE" ]; then
-    printf '%s %s: %s (%s via-helper)\n' "$VERB" "$TAGS" "$NOTE" "$DOC_PATH" >> "$DESTINATION"
+    printf -v line '%s %s: %s (%s via-helper)' "$VERB" "$TAGS" "$NOTE" "$DOC_PATH"
   else
-    printf '%s %s: %s (via-helper)\n' "$VERB" "$TAGS" "$DOC_PATH" >> "$DESTINATION"
+    printf -v line '%s %s: %s (via-helper)' "$VERB" "$TAGS" "$DOC_PATH"
   fi
 else
   NOTE=$*
-  printf '%s %s: %s (via-helper)\n' "$VERB" "$TAGS" "$NOTE" >> "$DESTINATION"
+  printf -v line '%s %s: %s (via-helper)' "$VERB" "$TAGS" "$NOTE"
 fi
+printf '%s\n' "$(status_stamp_line "$line")" >> "$DESTINATION"
