@@ -2713,6 +2713,31 @@ test_allow_red_requires_one_separate_name() {
   pass "fm-pr-merge accepts exactly one separately named red-check waiver"
 }
 
+test_missing_autonomous_dispatch_directory_does_not_block_yolo_merge() {
+  local case_dir rc head url
+  head=afafafafafafafafafafafafafafafafafafafaf
+  url=https://github.com/example/repo/pull/82
+  case_dir=$(make_case autonomous-dispatch-directory-missing)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$head"
+  printf '\nspawn_gen=fixture-task-x1\nyolo=on\n' >> "$case_dir/state/task-x1.meta"
+  write_away_record "$case_dir"
+  [ ! -e "$case_dir/home/data/autonomous-dispatch" ] \
+    || fail "autonomous-dispatch-directory-missing: fixture unexpectedly created dispatch state"
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "autonomous-dispatch-directory-missing: yolo merge should succeed"
+  assert_logged_gh_merge "$case_dir" 82 example/repo --squash
+  assert_grep "merge landed: task-x1 $url yolo" "$case_dir/state/.wake-queue" \
+    "autonomous-dispatch-directory-missing: merge did not use yolo authority"
+  [ ! -e "$case_dir/home/data/autonomous-dispatch" ] \
+    || fail "autonomous-dispatch-directory-missing: merge created dispatch state"
+  pass "a missing autonomous-dispatch directory does not block a generation-bound yolo merge"
+}
+
 test_away_grant_and_yolo_and_hold_for_return() {
   local case_dir rc url head
   head=acacacacacacacacacacacacacacacacacacacac
@@ -3098,6 +3123,7 @@ test_undated_runs_never_supersede
 test_allow_red_still_waives_only_the_current_failure
 test_allow_red_is_refused_while_away
 test_allow_red_requires_one_separate_name
+test_missing_autonomous_dispatch_directory_does_not_block_yolo_merge
 test_away_grant_and_yolo_and_hold_for_return
 test_away_posture_refuses_asynchronous_merge_paths
 test_away_plan_gated_403_does_not_block_the_merge

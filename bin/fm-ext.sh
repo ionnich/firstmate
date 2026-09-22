@@ -175,6 +175,7 @@ fi
 
 # --- apply, with whole-set rollback on any profile failure ------------------
 
+# shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 LOCK_DIR="$PROFILES_ROOT/.fm-ext.lock"
 fm_lock_acquire_wait "$LOCK_DIR" || fail "could not acquire profile transaction lock"
