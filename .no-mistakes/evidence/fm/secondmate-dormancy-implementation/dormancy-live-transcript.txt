@@ -1,0 +1,42 @@
+=== live dormancy drive (real bin scripts, sandbox FM_HOME) ===
+
+$ dorm mate enter
+dormant: mate
+[exit=0]
+-- marker present? --
+-rw-------@ 1 nich  staff  33 Sep 22 23:54 /var/folders/xd/1mdy_9c91vbc_96v6fy10zq80000gn/T//fm-dormancy-live.SLEQzt/parent/state/mate.dormant
+
+$ dorm mate enter
+already-dormant: mate
+[exit=0]
+
+=== adversarial: --key typo must NOT wake the dormant mate (validation precedes wake) ===
+
+$ send fm-mate --key
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e /Users/nich/.no-mistakes/worktrees/3bc3ee2d971b/01M34VMMC7JBG8DTHEHJF19QVJ/.pi/extensions/fm-primary-turnend-guard.ts -e /Users/nich/.no-mistakes/worktrees/3bc3ee2d971b/01M34VMMC7JBG8DTHEHJF19QVJ/.pi/extensions/fm-primary-pi-watch.ts if the extensions are not loaded.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: --key requires a key name
+[exit=1]
+-- marker still present after --key refusal? --
+-rw-------@ 1 nich  staff  33 Sep 22 23:54 /var/folders/xd/1mdy_9c91vbc_96v6fy10zq80000gn/T//fm-dormancy-live.SLEQzt/parent/state/mate.dormant
+
+=== routine machinery (FM_SEND_WAKE_DORMANT=0) refuses, does not wake ===
+
+$ env FM_SEND_WAKE_DORMANT=0 FM_HOME=/var/folders/xd/1mdy_9c91vbc_96v6fy10zq80000gn/T//fm-dormancy-live.SLEQzt/parent FM_ROOT_OVERRIDE=/Users/nich/.no-mistakes/worktrees/3bc3ee2d971b/01M34VMMC7JBG8DTHEHJF19QVJ /Users/nich/.no-mistakes/worktrees/3bc3ee2d971b/01M34VMMC7JBG8DTHEHJF19QVJ/bin/fm-send.sh fm-mate routine request
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: routine request refused for dormant secondmate mate
+[exit=1]
+-- marker still present after routine refusal? --
+-rw-------@ 1 nich  staff  33 Sep 22 23:54 /var/folders/xd/1mdy_9c91vbc_96v6fy10zq80000gn/T//fm-dormancy-live.SLEQzt/parent/state/mate.dormant
+
+=== real request (default wake) attempts to wake rather than refuse ===
+
+$ send fm-mate real routed request
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: could not wake dormant secondmate mate to deliver this request
+[exit=1]
