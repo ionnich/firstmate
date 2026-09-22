@@ -2172,9 +2172,9 @@ The real Pi/Herdr return guard (`FM_AFK_PI_HERDR_E2E=1 tests/fm-afk-pi-herdr-ret
 
 ### 2026-09-20 the away words execute
 
-The away-record owner, launch, return, merge, branch-supervision, contributions, merge-poll security, and Pi branch extension suites were run on macOS 26.6.2 arm64 (Darwin 25.6.0), Node v24.14.1, after the away record became the captain's words alone (version 2, with version 1 still readable) and the per-task merge-grant list retired.
+The away-record owner, launch, return, merge, branch-supervision, contributions, merge-poll security, and Pi branch extension suites were run on macOS 26.6.2 arm64 (Darwin 25.6.0), Node v24.14.1, after the away record became the captain's words alone (version 2, with version 1 still readable).
 No model was selected or prompted, no provider call was made, and the captain's own Pi session was not changed.
-The 2026-09-18 entry above records the retired grant model's merge matrix; the lines below supersede it for the merge gate.
+The away merge gate was restored to require yolo=on or a named merge-grant and holds every other task, so the grant matrix the 2026-09-18 entry records is current again and the words-model merge line below is superseded.
 
 ```sh
 bin/fm-test-run.sh tests/fm-afk-contract.test.sh tests/fm-afk-launch.test.sh tests/fm-afk-return.test.sh tests/fm-pr-merge.test.sh tests/fm-branch-supervision.test.sh tests/fm-contributions.test.sh tests/fm-pr-check-security.test.sh tests/fm-pi-branch-extension.test.sh
@@ -2189,7 +2189,7 @@ ok - a version 1 record validates, reads its words and scalars with the clause a
 ok - new words over a live version 1 record archive it and write version 2 with the same session start
 ok - enter: the retired --grant flag is refused by name and leaves the standing record alone
 ok - the return brief renders health, the words with the session account, waiting, could-not-fix, handled, and cost from durable records, and the gate shrinks to what the away session could not fix
-ok - while the away-posture record exists any green merge lands under away authority, yolo or not, and attended merges stay untagged
+ok - away merges require yolo or a grant, an ungranted task is held, and attended merges stay untagged
 ok - under the away-posture record the branch merges a green task, is refused on a red check with or without --allow-red, and is refused at the partition while attended
 ok - the away record does not bypass red checks, and a recorded pr= must match the URL
 ok - no away-record archive or replacement lands between the authority read and the merge
