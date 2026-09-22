@@ -25,10 +25,12 @@
 # standing authority it already has (bin/fm-branch-prompt.sh "Postures" owns the
 # execution rules). NO PARSER, TOKENIZER, CLASSIFIER, OR GRAMMAR READS THE WORDS
 # HERE, BY THE CAPTAIN'S MANDATE: this script never tokenizes, classifies, or
-# semantically validates them, records no clause fields, ids, or verbs, and keeps
-# no per-task merge-grant list. What stays mechanical is exactly what a script can
-# check without reading words: a merge green at its live head under this record's
-# lock, synchronous merges only, the spend cap, and the never-set.
+# semantically validates them, records no clause fields, ids, or verbs, and
+# writes no per-task merge-grant list (a version 1 record's legacy merge_grants
+# list is read only by the merge gate). What stays mechanical is exactly what a
+# script can check without reading words: the yolo/grant merge gate, still green
+# at its live head under this record's lock, synchronous merges only, the spend
+# cap, and the never-set.
 # HARD RULE: destructive, irreversible, and security-sensitive actions are never
 # pre-authorizable whatever the words say.
 #
@@ -339,7 +341,8 @@ fm_afk_contract_read_grants() {  # <path>
 
 # A record is valid when its version is one this script reads and the required
 # scalar fields and words block are present. Refuses rather than guessing at a
-# foreign schema. A version 1 record's clause and grant sections are ignored.
+# foreign schema. A version 1 record's clause and refused sections are ignored,
+# and its merge_grants list is read only by the merge gate.
 fm_afk_contract_validate() {  # <path>
   local path=$1 version entered entered_epoch expected reach announced spend words_header confirmed
   [ -f "$path" ] || return 1
