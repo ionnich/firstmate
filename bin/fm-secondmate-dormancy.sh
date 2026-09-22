@@ -26,6 +26,10 @@
 # request fail. A stop that cannot be proven leaves no marker at all, so dormancy
 # is simply lost rather than misreported.
 #
+# The confirmed-stopped read and the marker write hold the same per-task spawn
+# lock a liveness respawn try-acquires (state/.spawn-<id>.lock), so the guard
+# and the mark are atomic against a concurrent respawn.
+#
 # A routed request still wakes a dormant mate: bin/fm-send.sh wakes it before
 # delivering. Routine machinery (config push, reconcile, reply recovery) passes
 # FM_SEND_WAKE_DORMANT=0 and never wakes it, so only real work does.
@@ -195,12 +199,22 @@ if [ "$ACTION" = enter ]; then
     fi
     exit 1
   fi
+  SPAWN_TASK_LOCK="$STATE/.spawn-$ID.lock"
+  if ! fm_lock_try_acquire "$SPAWN_TASK_LOCK"; then
+    echo "error: another spawn is already creating secondmate $ID; dormancy refused" >&2
+    exit 1
+  fi
   if ! endpoint_confirmed_stopped; then
+    fm_lock_release "$SPAWN_TASK_LOCK" || true
     echo "error: secondmate $ID endpoint is not confirmed stopped; it is NOT dormant" >&2
     exit 1
   fi
-  fm_secondmate_dormancy_mark "$STATE" "$ID" \
-    || { echo "error: secondmate $ID stopped but its dormancy could not be recorded" >&2; exit 1; }
+  if ! fm_secondmate_dormancy_mark "$STATE" "$ID"; then
+    fm_lock_release "$SPAWN_TASK_LOCK" || true
+    echo "error: secondmate $ID stopped but its dormancy could not be recorded" >&2
+    exit 1
+  fi
+  fm_lock_release "$SPAWN_TASK_LOCK" || true
   # A request that landed during the stop itself would be stranded: its reply
   # recovery is refused while a mate is dormant, and the agent that received it
   # was just stopped mid-turn. Waking it back up restores the recovery path, and
