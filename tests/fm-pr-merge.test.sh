@@ -2717,6 +2717,7 @@ test_allow_red_is_refused_while_away() {
   add_gh_mocks "$case_dir" "$head"
   write_github_red_json "$case_dir" "$head" lint
   write_away_record "$case_dir" --words 'merge task-x1 when green'
+  printf '\nyolo=on\n' >> "$case_dir/state/task-x1.meta"
   set +e
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/82 \
     --allow-red lint \
@@ -2734,6 +2735,7 @@ test_allow_red_is_refused_while_away() {
   add_gh_mocks "$case_dir" "$head"
   write_github_red_json "$case_dir" "$head" lint
   write_away_record "$case_dir" --words 'merge task-x1 when green'
+  printf '\nyolo=on\n' >> "$case_dir/state/task-x1.meta"
   mv "$case_dir/state/.afk-contract" "$case_dir/away-record-after-view"
   set +e
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/82 \
@@ -2809,29 +2811,53 @@ test_missing_autonomous_dispatch_directory_does_not_block_yolo_merge() {
   pass "a missing autonomous-dispatch directory does not block a generation-bound yolo merge"
 }
 
-test_away_record_permits_any_green_merge_under_away_authority() {
+test_away_merge_requires_yolo_or_grant_and_holds_otherwise() {
   local case_dir rc url head
   head=acacacacacacacacacacacacacacacacacacacac
   url=https://github.com/example/repo/pull/83
 
-  # No yolo, no per-task grant: the record's presence is the whole mechanical
-  # fact, so a green merge proceeds and the ledger tags it away.
-  case_dir=$(make_case away-green)
+  # No yolo and no per-task grant: the record's presence alone never
+  # authorizes a merge, so an ungranted task is held for the captain's return.
+  case_dir=$(make_case away-held)
   mkdir -p "$case_dir/wt" "$case_dir/home"
   add_gh_mocks "$case_dir" "$head"
   write_away_record "$case_dir" --words 'merge the windows fix when green'
+  set +e
   FM_TEST_HOME="$case_dir/home" run_pr_merge "$case_dir" task-x1 "$url" \
-    > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "away-green: a green merge under the record should succeed: $(cat "$case_dir/stderr")"
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "away-held: ungranted merge must refuse"
+  assert_grep 'task task-x1 is held for the captain return' "$case_dir/stderr" \
+    "away-held: refusal did not name hold-for-return"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "away-held: gh pr merge ran without a grant"
+
+  # A task id in a version 1 record's merge-grant list merges under away authority.
+  case_dir=$(make_case away-grant)
+  mkdir -p "$case_dir/wt" "$case_dir/home"
+  add_gh_mocks "$case_dir" "$head"
+  cat > "$case_dir/state/.afk-contract" <<'EOF'
+version: 1
+entered: 2026-09-20T01:00:00Z
+entered_epoch: 1789600000
+expected_return: -
+reach_channels: none
+reach_announced: No phone channel is configured; anything that needs you waits for your return.
+spend_max_concurrent_workers: 4
+merge_grants:
+  - task-x1
+confirmed: 2026-09-20T01:00:05Z
+confirmed_epoch: 1789600005
+words: -
+EOF
+  FM_TEST_HOME="$case_dir/home" run_pr_merge "$case_dir" task-x1 "$url" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "away-grant: granted green merge should succeed: $(cat "$case_dir/stderr")"
   assert_logged_gh_merge "$case_dir" 83 example/repo --squash
   assert_grep "merge landed: task-x1 $url away" "$case_dir/state/.wake-queue" \
-    "away-green: the durable outcome did not tag away"
-  assert_no_grep 'away-grant' "$case_dir/state/.wake-queue" \
-    "away-green: the retired away-grant tag reappeared"
-  [ "$(sed -n 6p "$case_dir/state/task-x1.merge-authority" 2>/dev/null || true)" = away ] \
-    || fail "away-green: the persisted merge authority is not away: $(cat "$case_dir/state/task-x1.merge-authority" 2>/dev/null || true)"
+    "away-grant: the durable outcome did not tag away"
 
-  # A yolo=on task merges under the same away authority: the posture, not the
-  # task's standing autonomy, is what the ledger records while away.
+  # A yolo=on task merges under the same away authority.
   case_dir=$(make_case away-yolo)
   mkdir -p "$case_dir/wt" "$case_dir/home"
   add_gh_mocks "$case_dir" "$head"
@@ -2841,17 +2867,6 @@ test_away_record_permits_any_green_merge_under_away_authority() {
     > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "away-yolo: yolo green merge should succeed"
   assert_grep "merge landed: task-x1 $url away" "$case_dir/state/.wake-queue" \
     "away-yolo: the durable outcome did not tag away"
-
-  # --attended-override re-enables forge flags for an explicit instruction; it
-  # never skips the record read, and the merge still lands under away authority.
-  case_dir=$(make_case away-attended-override)
-  mkdir -p "$case_dir/wt" "$case_dir/home"
-  add_gh_mocks "$case_dir" "$head"
-  write_away_record "$case_dir" --words 'merge it when green'
-  FM_TEST_HOME="$case_dir/home" run_pr_merge "$case_dir" task-x1 "$url" --attended-override \
-    > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "away-attended-override: a green merge should succeed: $(cat "$case_dir/stderr")"
-  assert_grep "merge landed: task-x1 $url away" "$case_dir/state/.wake-queue" \
-    "away-attended-override: the durable outcome did not tag away"
 
   # Without the record the merge is attended and the ledger row stays untagged.
   case_dir=$(make_case attended-untagged)
@@ -2863,12 +2878,12 @@ test_away_record_permits_any_green_merge_under_away_authority() {
     *"$url") ;;
     *) fail "attended-untagged: the attended outcome carried an authority tag: $(grep -F 'merge landed' "$case_dir/state/.wake-queue")" ;;
   esac
-  pass "while the away-posture record exists any green merge lands under away authority, yolo or not, and attended merges stay untagged"
+  pass "away merges require yolo or a grant, an ungranted task is held, and attended merges stay untagged"
 }
 
 # While the away-posture record exists main is parked, so the supervision
 # branch actor may reach the merge gate - and meets exactly the gate main
-# would: any task merges green at its live head under away authority, a red
+# would: a granted task merges green at its live head under away authority, a red
 # one is refused whatever the words say, and without the record the branch is
 # refused at the role partition before any forge call
 # (docs/pi-supervision-branch.md "Postures").
@@ -2891,11 +2906,12 @@ test_away_branch_actor_merges_green_under_the_record() {
   [ ! -e "$case_dir/gh.log" ] || assert_no_grep 'pr ' "$case_dir/gh.log" \
     "away-branch-attended: gh ran for an attended branch merge"
 
-  # No yolo and no grant list: the record alone relocates the green merge.
+  # A yolo-granted task's green merge relocates to the branch.
   case_dir=$(make_case away-branch-green)
   mkdir -p "$case_dir/wt" "$case_dir/home"
   add_gh_mocks "$case_dir" "$head"
   write_away_record "$case_dir" --words 'merge the windows fix when green'
+  printf '\nyolo=on\n' >> "$case_dir/state/task-x1.meta"
   FM_SUPERVISION_ACTOR=branch FM_TEST_HOME="$case_dir/home" run_pr_merge "$case_dir" task-x1 "$url" \
     > "$case_dir/stdout" 2> "$case_dir/stderr" \
     || fail "away-branch-green: a green merge must succeed for the branch under the record: $(cat "$case_dir/stderr")"
@@ -2913,6 +2929,7 @@ test_away_branch_actor_merges_green_under_the_record() {
   write_github_rollup_json "$case_dir" "$head" \
     '{"__typename":"CheckRun","name":"lint","status":"COMPLETED","conclusion":"FAILURE","startedAt":"2026-09-01T00:00:00Z"}'
   write_away_record "$case_dir" --words 'merge task-x1 even if lint is red'
+  printf '\nyolo=on\n' >> "$case_dir/state/task-x1.meta"
   set +e
   FM_SUPERVISION_ACTOR=branch FM_TEST_HOME="$case_dir/home" run_pr_merge "$case_dir" task-x1 "$url" \
     > "$case_dir/stdout" 2> "$case_dir/stderr"
@@ -2950,6 +2967,7 @@ test_away_branch_refuses_when_record_archived_during_preflight() {
   mkdir -p "$case_dir/wt" "$case_dir/home"
   add_gh_mocks "$case_dir" "$head"
   write_away_record "$case_dir" --words 'merge task-x1 when green'
+  printf '\nyolo=on\n' >> "$case_dir/state/task-x1.meta"
   : > "$case_dir/away-record-after-view"
   set +e
   FM_SUPERVISION_ACTOR=branch FM_TEST_HOME="$case_dir/home" run_pr_merge "$case_dir" task-x1 "$url" \
@@ -2993,6 +3011,7 @@ test_away_posture_refuses_asynchronous_merge_paths() {
   add_gh_mocks "$case_dir" "$head"
   printf 'merge_method=MERGE\n' > "$case_dir/github-rules"
   write_away_record "$case_dir" --words 'merge task-x1 when green'
+  printf '\nyolo=on\n' >> "$case_dir/state/task-x1.meta"
   set +e
   run_pr_merge "$case_dir" task-x1 "$url" \
     > "$case_dir/stdout" 2> "$case_dir/stderr"
@@ -3019,6 +3038,7 @@ test_away_posture_refuses_asynchronous_merge_paths() {
 
   case_dir=$(make_gitlab_case away-gitlab-configured merge_when_pipeline_succeeds=true)
   write_away_record "$case_dir" --words 'merge task-x1 when green'
+  printf '\nyolo=on\n' >> "$case_dir/state/task-x1.meta"
   set +e
   run_pr_merge "$case_dir" task-x1 "$MR_URL" \
     > "$case_dir/stdout" 2> "$case_dir/stderr"
@@ -3030,6 +3050,7 @@ test_away_posture_refuses_asynchronous_merge_paths() {
 
   case_dir=$(make_gitlab_case away-gitlab-sync)
   write_away_record "$case_dir" --words 'merge task-x1 when green'
+  printf '\nyolo=on\n' >> "$case_dir/state/task-x1.meta"
   run_pr_merge "$case_dir" task-x1 "$MR_URL" \
     > "$case_dir/stdout" 2> "$case_dir/stderr" \
     || fail "away-gitlab-sync: an immediate merge under the record should succeed"
@@ -3049,6 +3070,7 @@ test_away_record_does_not_bypass_red_or_identity() {
   add_gh_mocks "$case_dir" "$head"
   write_github_red_json "$case_dir" "$head" lint
   write_away_record "$case_dir" --words 'merge task-x1 when green'
+  printf '\nyolo=on\n' >> "$case_dir/state/task-x1.meta"
   set +e
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/84 \
     > "$case_dir/stdout" 2> "$case_dir/stderr"
@@ -3126,6 +3148,7 @@ test_away_record_cannot_change_between_the_authority_read_and_the_merge() {
   mkdir -p "$case_dir/wt"
   add_gh_mocks "$case_dir" 1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b
   write_away_record "$case_dir" --words 'merge task-x1 when green'
+  printf '\nyolo=on\n' >> "$case_dir/state/task-x1.meta"
   mutate=$(away_change_script "$case_dir" archive-at-merge <<'SH'
 "$CONTRACT" archive
 SH
@@ -3161,6 +3184,7 @@ SH
   mkdir -p "$case_dir/wt"
   add_gh_mocks "$case_dir" 2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c
   write_away_record "$case_dir" --words 'merge task-x1 when green'
+  printf '\nyolo=on\n' >> "$case_dir/state/task-x1.meta"
   mutate=$(away_change_script "$case_dir" replace-at-merge <<'SH'
 "$CONTRACT" enter --words 'hold everything for my return'
 SH
@@ -3193,6 +3217,7 @@ test_a_record_made_unreadable_before_the_merge_refuses_it() {
   add_gh_mocks "$case_dir" 3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d
   printf 'not-a-contract\n' > "$case_dir/away-record-after-view"
   write_away_record "$case_dir" --words 'merge task-x1 when green'
+  printf '\nyolo=on\n' >> "$case_dir/state/task-x1.meta"
 
   set +e
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/73 \
@@ -3302,7 +3327,7 @@ test_allow_red_is_refused_while_away
 test_allow_red_requires_one_separate_name
 test_missing_autonomous_dispatch_directory_does_not_block_yolo_merge
 test_dispatch_authorized_merge_records_its_outcome
-test_away_record_permits_any_green_merge_under_away_authority
+test_away_merge_requires_yolo_or_grant_and_holds_otherwise
 test_away_branch_actor_merges_green_under_the_record
 test_away_branch_refuses_when_record_archived_during_preflight
 test_away_posture_refuses_asynchronous_merge_paths

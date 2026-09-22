@@ -11,13 +11,13 @@
 #   <path>
 #   <number>
 #   <authority>                 away | attended | autonomous-dispatch
-# While the away-posture record exists every merge runs under away authority
-# (the record's presence is the whole mechanical fact; which merge the captain's
-# away words meant is the supervision session's reading); without it the merge
-# is attended, and a reviewed autonomous dispatch writes its own value. The
-# retired values yolo and away-grant are still accepted when an existing record
-# is read, so a merge persisted before the words model landed is still consumed,
-# but they are never written again.
+# While the away-posture record exists a merge runs under away authority only
+# when the task's meta records yolo=on or its id is in the record's merge-grant
+# list; otherwise it is held for the captain's return. Without the record the
+# merge is attended, and a reviewed autonomous dispatch writes its own value.
+# The retired values yolo and away-grant are still accepted when an existing
+# record is read, so a merge persisted before the words model landed is still
+# consumed, but they are never written again.
 # The identity comes from the merge run's immutable canonical URL parse;
 # persistence revalidates the task's current pr= metadata under its metadata
 # and lifecycle locks and refuses a mismatch. The file is atomically published,
@@ -52,6 +52,7 @@ FM_MERGE_AUTHORITY_RECORD_IDENTITY=
 
 fm_merge_authority_resolve() {  # <home> <state> <meta> <task-id>
   local home=${1-} state=${2-} meta=${3-} id=${4-}
+  local yolo='' grants grant
   FM_MERGE_AUTHORITY=
   FM_MERGE_AUTHORITY_REASON='invalid'
   [ -n "$home" ] && [ -n "$state" ] && [ -n "$meta" ] && [ -n "$id" ] || return 1
@@ -66,10 +67,28 @@ fm_merge_authority_resolve() {  # <home> <state> <meta> <task-id>
     FM_MERGE_AUTHORITY_REASON='record-unreadable'
     return 1
   fi
-  FM_MERGE_AUTHORITY='away'
-  # shellcheck disable=SC2034 # Public results consumed by sourcing callers.
-  FM_MERGE_AUTHORITY_REASON='away'
-  return 0
+  if [ -f "$meta" ]; then
+    yolo=$(grep '^yolo=' "$meta" | tail -1 | cut -d= -f2- || true)
+  fi
+  if [ "$yolo" = on ]; then
+    FM_MERGE_AUTHORITY='away'
+    FM_MERGE_AUTHORITY_REASON='granted'
+    return 0
+  fi
+  grants=$(fm_afk_contract_read_grants "$(fm_afk_contract_path "$state")" 2>/dev/null) || {
+    FM_MERGE_AUTHORITY_REASON='grants-unreadable'
+    return 1
+  }
+  while IFS= read -r grant; do
+    [ "$grant" = "$id" ] || continue
+    FM_MERGE_AUTHORITY='away'
+    FM_MERGE_AUTHORITY_REASON='granted'
+    return 0
+  done <<EOF
+$grants
+EOF
+  FM_MERGE_AUTHORITY_REASON='not-granted'
+  return 1
 }
 
 fm_merge_authority_record_matches() {  # <record> <device> <provider> <host> <path> <number>

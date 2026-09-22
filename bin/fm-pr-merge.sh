@@ -902,7 +902,17 @@ resolve_merge_authority() {
     FM_PR_MERGE_AUTHORITY=$FM_MERGE_AUTHORITY
     return 0
   fi
-  echo "error: PR merge refused - the away-posture record could not be read; nothing was merged" >&2
+  case "$FM_MERGE_AUTHORITY_REASON" in
+    record-unreadable)
+      echo "error: PR merge refused - the away-posture record could not be read; nothing was merged" >&2
+      ;;
+    grants-unreadable)
+      echo "error: PR merge refused - the away-posture record's grants could not be read; nothing was merged" >&2
+      ;;
+    *)
+      echo "error: task $ID is held for the captain return" >&2
+      ;;
+  esac
   return 1
 }
 

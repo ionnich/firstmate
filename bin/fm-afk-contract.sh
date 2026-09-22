@@ -52,8 +52,9 @@
 # other line after the header that is not a stored line is damage, not a
 # boundary, so a truncated mandate can never read as a whole one.
 # A version 1 record (the retired clause model) still validates and reads: its
-# scalar fields and words are read exactly as above, and its clauses:, refused:,
-# and merge_grants: sections are ignored, so an upgrade never breaks a live away
+# scalar fields and words are read exactly as above, its clauses: and refused:
+# sections are ignored, and its merge_grants: list is read only by the merge
+# gate, so an upgrade never breaks a live away
 # window. Only version 2 is ever written.
 # The retired two-step entry staged a proposal at state/.afk-contract.proposed;
 # no proposal is written any more, and `enter` removes one an older version left
@@ -286,6 +287,52 @@ fm_afk_contract_read_words() {  # <path>
         printf "%s", lines[i]
         if (i < count || keep_final) printf "\n"
       }
+    }
+  ' "$path"
+}
+
+# One granted task id per line. A missing merge_grants field is an empty list
+# so a pre-field v1 record fails closed for non-yolo merges instead of skipping
+# the grant check. A present but unreadable field fails rather than guessing.
+fm_afk_contract_read_grants() {  # <path>
+  local path=$1
+  [ -f "$path" ] || return 1
+  awk -v record="$path" '
+    function die(reason) {
+      printf "fm-afk-contract: record %s has an invalid merge_grants field: %s\n", record, reason > "/dev/stderr"
+      bad = 1
+      exit 2
+    }
+    function valid_id(value) {
+      if (value == "" || substr(value, 1, 1) == ".") return 0
+      return value ~ /^[A-Za-z0-9._-]+$/
+    }
+    /^merge_grants:/ {
+      if (found) die("the field is defined more than once")
+      found = 1
+      if ($0 == "merge_grants: -") { empty = 1; next }
+      if ($0 == "merge_grants:") { inlist = 1; next }
+      die("the empty form is merge_grants: -")
+    }
+    inlist && /^  - / {
+      id = substr($0, 5)
+      if (!valid_id(id)) die("task id \"" id "\" is not a valid task id")
+      if (seen[id]++) die("task id \"" id "\" is listed more than once")
+      print id
+      count++
+      next
+    }
+    inlist && /^[^ ]/ {
+      if (count == 0) die("the list form has no stored ids")
+      inlist = 0
+      next
+    }
+    empty && /^[^ ]/ { empty = 0; next }
+    inlist || empty { die("a stored grant line is malformed") }
+    END {
+      if (bad) exit 2
+      if (!found) exit 0
+      if (inlist && count == 0) die("the list form has no stored ids")
     }
   ' "$path"
 }
