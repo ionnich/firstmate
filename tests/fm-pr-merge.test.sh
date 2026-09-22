@@ -2799,8 +2799,11 @@ test_missing_autonomous_dispatch_directory_does_not_block_yolo_merge() {
   set -e
   expect_code 0 "$rc" "autonomous-dispatch-directory-missing: yolo merge should succeed"
   assert_logged_gh_merge "$case_dir" 82 example/repo --squash
-  assert_grep "merge landed: task-x1 $url yolo" "$case_dir/state/.wake-queue" \
-    "autonomous-dispatch-directory-missing: merge did not use yolo authority"
+  # The away-posture record's presence is the whole mechanical fact under the
+  # words model this merge carries, so the ledger tags away even though the task
+  # also stands yolo=on; the retired yolo tag is never written again.
+  assert_grep "merge landed: task-x1 $url away" "$case_dir/state/.wake-queue" \
+    "autonomous-dispatch-directory-missing: merge did not record the away authority"
   [ ! -e "$case_dir/home/data/autonomous-dispatch" ] \
     || fail "autonomous-dispatch-directory-missing: merge created dispatch state"
   pass "a missing autonomous-dispatch directory does not block a generation-bound yolo merge"
