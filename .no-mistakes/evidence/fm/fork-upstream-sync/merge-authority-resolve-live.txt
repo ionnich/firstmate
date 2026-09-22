@@ -1,0 +1,5 @@
+=== direct live drive: fm_merge_authority_resolve (shipped bin/fm-merge-authority-lib.sh) ===
+CASE=attended (no record) rc=0 authority=attended reason=attended
+CASE=held (away record, yolo=off, no grant) rc=1 authority=<empty> reason=not-granted
+CASE=away (yolo=on) rc=0 authority=away reason=granted
+CASE=away (id in merge-grant list) rc=0 authority=away reason=granted

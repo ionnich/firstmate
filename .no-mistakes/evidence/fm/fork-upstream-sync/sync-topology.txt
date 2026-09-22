@@ -1,0 +1,9 @@
+=== sync topology: base 9ff99d6 -> target fb7458f ===
+upstream tip f5735dc ancestor of target: yes
+fork base 9ff99d6 ancestor of target: yes
+upstream-only commits missing from target: 0
+target ahead of upstream: 17
+fork-only commits (9ff99d6 not in f5735dc): 14
+conflict markers: 0
+git diff --check exit: 0
+working tree: 0 files
