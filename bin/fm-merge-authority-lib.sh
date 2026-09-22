@@ -87,6 +87,7 @@ fm_merge_authority_resolve() {  # <home> <state> <meta> <task-id>
   done <<EOF
 $grants
 EOF
+  # shellcheck disable=SC2034 # Public results consumed by sourcing callers.
   FM_MERGE_AUTHORITY_REASON='not-granted'
   return 1
 }

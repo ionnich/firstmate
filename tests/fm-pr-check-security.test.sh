@@ -2255,9 +2255,10 @@ test_merged_poll_row_carries_the_merge_authority() {
   local dir state url expected posture
   url=https://github.com/o/r/pull/1
 
-  # Both a yolo=on task and an ordinary one merge under the record's away
-  # authority; the words model retired the per-task grant and the yolo tag.
-  for posture in yolo words; do
+  # A yolo=on task merges under the record's away authority, and so does a task
+  # whose id sits in a version 1 record's legacy merge-grant list. Both retain
+  # that authority after the captain returns.
+  for posture in yolo grant; do
     dir=$(make_case "queued-merge-authority-$posture")
     state="$dir/home/state"
     write_task_meta "$dir" task-a
@@ -2265,7 +2266,20 @@ test_merged_poll_row_carries_the_merge_authority() {
       printf 'yolo=on\n' >> "$state/task-a.meta"
       write_away_record "$dir"
     else
-      write_away_record "$dir" --words 'merge task-a when green'
+      cat > "$state/.afk-contract" <<'EOF'
+version: 1
+entered: 2026-09-20T01:00:00Z
+entered_epoch: 1789600000
+expected_return: -
+reach_channels: none
+reach_announced: No phone channel is configured; anything that needs you waits for your return.
+spend_max_concurrent_workers: 4
+merge_grants:
+  - task-a
+confirmed: 2026-09-20T01:00:05Z
+confirmed_epoch: 1789600005
+words: -
+EOF
     fi
     expected=away
     run_check_entry "$dir" task-a "$url" >/dev/null 2> "$dir/seed.err" \
