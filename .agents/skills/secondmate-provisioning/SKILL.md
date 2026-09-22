@@ -40,7 +40,7 @@ This release places whole secondmate homes remotely and never individual workers
 The home-seeded `data/charter.md` is the sole owner of boilerplate idle-by-default behavior, the normal delegation lifecycle, and standard escalation contracts, so point to that charter rather than restating those contracts in the registry entry.
 The `scope:` field is used during intake.
 The `projects:` field is a non-exclusive clone list, not ownership.
-A secondmate's OWN `data/projects.md` seeds from the primary's registered posture for each listed project at seed time, then stays converged against later primary changes at every local convergence point (bootstrap sweep, mid-session config push, spawn pre-launch); see "Project registry convergence" below for the primary-authoritative merge and drift-reporting contract, and its local-only scope.
+A secondmate's OWN `data/projects.md` seeds from the primary's registered posture for each listed project at seed time, then stays converged against later primary changes at every local convergence point (bootstrap sweep, mid-session config push, spawn pre-launch) and through the remote inherited-material push; see "Project registry convergence" below for the primary-authoritative merge and drift-reporting contract.
 
 ## Charter and seed
 
@@ -127,11 +127,11 @@ Never copy any secondmate `data/captain-shared.md` back into the primary.
 
 ### Project registry convergence
 
-`bin/fm-project-registry-lib.sh` owns the `data/projects.md` registry-line contract shared by `bin/fm-home-seed.sh` (the initial seed) and `bin/fm-config-inherit-lib.sh`'s `propagate_project_registry` (ongoing convergence at the same three local convergence points as the rest of this section: the locked bootstrap secondmate sweep, `bin/fm-config-push.sh`, and `bin/fm-spawn.sh --secondmate` pre-launch).
+`bin/fm-project-registry-lib.sh` owns the `data/projects.md` registry-line contract shared by `bin/fm-home-seed.sh` (the initial seed) and `bin/fm-config-inherit-lib.sh`'s `propagate_project_registry` (ongoing convergence at the same three local convergence points as the rest of this section: the locked bootstrap secondmate sweep, `bin/fm-config-push.sh`, and `bin/fm-spawn.sh --secondmate` pre-launch), while `bin/fm-remote-inherit-push.sh` and `bin/fm-remote-inherit.sh` carry the same merge over remote routes.
 Unlike `data/captain-shared.md`, `data/projects.md` is never mirrored whole: a secondmate may register a local-only project the primary never knew about, and that entry must survive convergence untouched.
 The primary is authoritative only for a project BOTH registries already know about: when the primary's line for such a project differs from the secondmate's copy (for example the captain adding `+yolo` after seeding), convergence overwrites the secondmate's line with the primary's verbatim line and reports the exact old and new line as a `SECONDMATE_SYNC:` diagnostic, so a lossy copy is surfaced rather than silently re-obeyed.
 This closes the drift class where a project's registered posture was captured once at seed time and never refreshed.
-This convergence is LOCAL-only: a remote secondmate's `data/projects.md` is not yet part of `bin/fm-remote-inherit-push.sh` / `bin/fm-remote-inherit.sh`'s transfer, so a remote home's registered posture still only reflects what it was seeded with.
+The same per-project merge applies over remote routes: `bin/fm-remote-inherit-push.sh` sends a bounded primary-registry payload, and `bin/fm-remote-inherit.sh` merges only entries already present in both registries, preserving remote-home-only entries.
 Keep each home's `data/captain.md` domain-local.
 After first propagation to an existing home, trim that home's local `data/captain.md` by hand to domain-specific content plus pointers to `data/captain-shared.md`; do not automate or silently delete private content.
 Keep every `data/learnings.md` fully local by captain decision; route fleet-general machinery facts into tracked documentation through the normal firstmate repo path rather than inventing shared learnings propagation.
@@ -149,7 +149,7 @@ The propagation, generation publication, and pointer-delivery sequence holds one
 A newly launched or relaunched secondmate already reads its files at launch, so its pending config-reread generations are discarded or quarantined after cleanup failure and it needs no redundant live-agent config nudge unless propagation changes files after launch.
 Quarantined pre-relaunch generations are retained in bounded private history, and cleanup skips creating an empty quarantine generation.
 Successfully delivered generations are retained only within a bounded per-home state history, while pending generations remain until delivery succeeds or a launch supersedes them.
-A remote home receives the same allowlisted bytes through `fm-remote-inherit.sh` and gets one marked re-read instruction after a changed transfer.
+A remote home receives the same allowlisted bytes plus the per-project `data/projects.md` registry merge through `fm-remote-inherit.sh`, and gets one marked re-read instruction after a changed transfer.
 The parent records that nudge before delivery, retains it after a failed send, and retries the exact same route during locked bootstrap convergence.
 It does not receive a pointer to a primary-local generation path that cannot exist on that host.
 Inherited harness and runtime-backend defaults must not harden `fm-spawn` to reject a deliberate runtime choice that differs from those defaults.

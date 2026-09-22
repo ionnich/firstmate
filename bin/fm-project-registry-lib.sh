@@ -1,9 +1,12 @@
 # shellcheck shell=bash
 # Shared data/projects.md registry-line helpers. Single owner of "read one
-# project's verbatim registry line" and "converge a secondmate's subset of
-# that registry against the primary's copy". Used by bin/fm-home-seed.sh (the
-# initial seed) and bin/fm-config-inherit-lib.sh (ongoing convergence at the
+# project's verbatim registry line", "converge a secondmate's subset of
+# that registry against the primary's copy", and the operator-visible
+# SECONDMATE_SYNC drift report line both convergence paths emit for a corrected
+# entry. Used by bin/fm-home-seed.sh (the initial seed),
+# bin/fm-config-inherit-lib.sh (ongoing convergence at the
 # bootstrap secondmate sweep, mid-session config push, and spawn pre-launch),
+# and bin/fm-remote-inherit.sh (the merge a remote route now receives),
 # so a project's registered posture can drift out of sync after seeding
 # without ever being silently re-obeyed (AGENTS.md section 6).
 #
@@ -69,4 +72,14 @@ fm_project_registry_converge() {
     rm -f "$tmp"
   fi
   return 0
+}
+
+# fm_project_registry_report_line <home> <project> <old-line> <new-line>
+# Prints the one operator-visible drift report for a corrected registry entry.
+# This is the single definition of that line, emitted by both convergence paths
+# (the local propagation path and the remote receiver), so their wording cannot
+# drift apart; the SECONDMATE_SYNC line is matched by tests and read by
+# operators, so its text is a contract rather than an incidental message.
+fm_project_registry_report_line() {
+  printf 'SECONDMATE_SYNC: secondmate home %s: project registry for %s converged to primary posture: %s -> %s\n' "$1" "$2" "$3" "$4"
 }

@@ -148,3 +148,60 @@ pass "propagate_project_registry converges a drifted secondmate registry and rep
 wired_out2=$(propagate_project_registry "$src_data" "$dest_data") || fail "a second propagate_project_registry pass must not fail"
 [ -z "$wired_out2" ] || fail "a converged registry must produce no further SECONDMATE_SYNC output, got: $wired_out2"
 pass "propagate_project_registry is silent once the secondmate registry is converged"
+
+# --- remote receiver project-registry command -------------------------------
+
+remote_home="$TMP_ROOT/remote-home"
+mkdir -p "$remote_home/config" "$remote_home/data" "$remote_home/state"
+cat > "$remote_home/data/projects.md" <<'EOF'
+- finks-overwatch [no-mistakes-prod-only] - Event Relay (added 2026-09-16)
+- remote-only [direct-PR] - Remote project (added 2026-09-16)
+EOF
+remote_bytes=$(LC_ALL=C wc -c < "$src_data/projects.md" | tr -d ' ')
+remote_hash=$(fm_inherit_sha256 "$src_data/projects.md")
+remote_out=$(FM_HOME="$remote_home" "$ROOT/bin/fm-remote-inherit.sh" \
+  project-registry data/projects.md "$remote_bytes" "$remote_hash" 1 \
+  < "$src_data/projects.md") || fail "remote project-registry merge must succeed"
+printf '%s\n' "$remote_out" | grep -q 'pushed: data/projects.md' \
+  || fail "remote project-registry merge must report a changed registry"
+grep -qF -- '- finks-overwatch [no-mistakes-prod-only +yolo] - Event Relay (added 2026-09-16)' \
+  "$remote_home/data/projects.md" || fail "remote receiver kept stale project posture"
+grep -qF -- '- remote-only [direct-PR] - Remote project (added 2026-09-16)' \
+  "$remote_home/data/projects.md" || fail "remote receiver clobbered remote-only project"
+staged_registry=$(find "$remote_home/data" -name '.inherit.*' -print -quit)
+[ -z "$staged_registry" ] || fail "remote registry merge left staged payload: $staged_registry"
+pass "remote receiver merges shared project posture and preserves remote-only entries"
+
+remote_out2=$(FM_HOME="$remote_home" "$ROOT/bin/fm-remote-inherit.sh" \
+  project-registry data/projects.md "$remote_bytes" "$remote_hash" 1 \
+  < "$src_data/projects.md") || fail "repeated remote project-registry merge must succeed"
+[ "$remote_out2" = "unchanged: data/projects.md" ] \
+  || fail "repeated remote project-registry merge must be idempotent, got: $remote_out2"
+empty_registry="$TMP_ROOT/empty-projects.md"
+: > "$empty_registry"
+empty_hash=$(fm_inherit_sha256 "$empty_registry")
+remote_absent_out=$(FM_HOME="$remote_home" "$ROOT/bin/fm-remote-inherit.sh" \
+  project-registry data/projects.md 0 "$empty_hash" 2 \
+  < "$empty_registry") || fail "empty remote project-registry marker must succeed"
+[ "$remote_absent_out" = "unchanged: data/projects.md" ] \
+  || fail "empty remote project-registry marker must be a no-op, got: $remote_absent_out"
+if FM_HOME="$remote_home" "$ROOT/bin/fm-remote-inherit.sh" \
+  project-registry data/projects.md "$remote_bytes" "$remote_hash" 1 \
+  < "$src_data/projects.md" >/dev/null 2>&1; then
+  fail "remote receiver accepted an older registry payload after an empty marker"
+fi
+grep -qF -- '- remote-only [direct-PR] - Remote project (added 2026-09-16)' \
+  "$remote_home/data/projects.md" || fail "older registry payload removed remote-only project"
+pass "empty remote registry markers advance generation without deleting local entries"
+
+if FM_HOME="$remote_home" "$ROOT/bin/fm-remote-inherit.sh" \
+  put data/projects.md "$remote_bytes" "$remote_hash" 2 \
+  < "$src_data/projects.md" >/dev/null 2>&1; then
+  fail "ordinary remote put must not accept data/projects.md"
+fi
+if FM_HOME="$remote_home" "$ROOT/bin/fm-remote-inherit.sh" \
+  project-registry config/crew-harness "$remote_bytes" "$remote_hash" 2 \
+  < "$src_data/projects.md" >/dev/null 2>&1; then
+  fail "project-registry must reject paths other than data/projects.md"
+fi
+pass "remote receiver reserves data/projects.md for per-project merges"

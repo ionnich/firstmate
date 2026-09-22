@@ -4,10 +4,13 @@
 # Usage:
 #   fm-remote-inherit.sh put <allowlisted-relative-path> <bytes> <sha256> <generation> < stdin
 #   fm-remote-inherit.sh absent <allowlisted-relative-path> 0 <empty-sha256> <generation>
+#   fm-remote-inherit.sh project-registry data/projects.md <bytes> <sha256> <generation> < stdin
 #
-# Only the inherited-material allowlist is writable or removable. Writes are
-# atomic ordinary-file replacements. Divergent data/captain-shared.md bytes are
-# quarantined before replacement or removal and its converged copy is read-only.
+# Declared inherited-material items are writable or removable as whole files.
+# Project registry updates are merged per project rather than replacing the
+# whole file. Writes are atomic ordinary-file replacements. Divergent
+# data/captain-shared.md bytes are quarantined before replacement or removal and
+# its converged copy is read-only.
 set -eu
 
 FM_HOME=${FM_HOME:?FM_HOME is required}
@@ -20,14 +23,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/fm-config-inherit-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
-usage() { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 file_link_count() {
   if [ "$(uname)" = Darwin ]; then /usr/bin/stat -f %l "$1" 2>/dev/null; else stat -c %h "$1" 2>/dev/null; fi
 }
 sha256_file() {
   if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'; else sha256sum "$1" | awk '{print $1}'; fi
 }
-# Writable set, derived from the ONE declared inherited-material owner
+# Writable set for the whole-file put and absent commands, derived from the ONE
+# declared inherited-material owner
 # (FM_INHERITABLE_CONFIG in bin/fm-config-inherit-lib.sh), so this code root's
 # receiver and sender cannot drift silently. This runs under the remote
 # entrypoint's fixed empty environment, so the declaration is this code root's
@@ -49,7 +53,15 @@ REL=$2
 EXPECTED_BYTES=$3
 EXPECTED_HASH=$4
 GENERATION=$5
-allowed "$REL" || die "path is not inherited material: $REL"
+case "$COMMAND" in
+  project-registry)
+    [ "$REL" = data/projects.md ] || die "project-registry path must be data/projects.md"
+    ;;
+  put|absent)
+    allowed "$REL" || die "path is not inherited material: $REL"
+    ;;
+  *) usage ;;
+esac
 case "$EXPECTED_BYTES" in ''|*[!0-9]*) die "expected bytes must be a nonnegative integer" ;; esac
 [ "${#EXPECTED_BYTES}" -le 10 ] || die "expected bytes exceed the byte bound"
 [ "$EXPECTED_BYTES" -le "$MAX_BYTES" ] || die "expected bytes exceed the byte bound"
@@ -101,7 +113,7 @@ commit_generation() {
     case "$existing_bytes" in ''|*[!0-9]*) die "inheritance generation record is malformed" ;; esac
     case "$existing_hash" in ''|*[!A-Fa-f0-9]*) die "inheritance generation record is malformed" ;; esac
     [ "${#existing_hash}" -eq 64 ] || die "inheritance generation record is malformed"
-    case "$existing_command" in put|absent) ;; *) die "inheritance generation record is malformed" ;; esac
+    case "$existing_command" in put|absent|project-registry) ;; *) die "inheritance generation record is malformed" ;; esac
     if [ "$existing_generation" -gt "$GENERATION" ]; then
       die "inheritance write generation is superseded"
     fi
@@ -137,15 +149,19 @@ quarantine_shared() {
   printf 'quarantined: %s (%s)\n' "${quarantine#"$HOME_REAL/"}" "$reason" >&2
 }
 
+stage_payload() {
+  TMP=$(umask 077; mktemp "$PARENT_REAL/.inherit.XXXXXX") || die "cannot stage inherited material"
+  head -c "$((MAX_BYTES + 1))" > "$TMP" || die "cannot read inherited material"
+  BYTES=$(LC_ALL=C wc -c < "$TMP" | tr -d ' ')
+  [ "$BYTES" -le "$MAX_BYTES" ] || die "inherited material exceeds the byte bound"
+  [ "$BYTES" -eq "$EXPECTED_BYTES" ] || die "inherited material length does not match its commitment"
+  ACTUAL_HASH=$(sha256_file "$TMP") || die "cannot hash inherited material"
+  [ "$ACTUAL_HASH" = "$EXPECTED_HASH" ] || die "inherited material digest does not match its commitment"
+}
+
 case "$COMMAND" in
   put)
-    TMP=$(umask 077; mktemp "$PARENT_REAL/.inherit.XXXXXX") || die "cannot stage inherited material"
-    head -c "$((MAX_BYTES + 1))" > "$TMP" || die "cannot read inherited material"
-    BYTES=$(LC_ALL=C wc -c < "$TMP" | tr -d ' ')
-    [ "$BYTES" -le "$MAX_BYTES" ] || die "inherited material exceeds the byte bound"
-    [ "$BYTES" -eq "$EXPECTED_BYTES" ] || die "inherited material length does not match its commitment"
-    ACTUAL_HASH=$(sha256_file "$TMP") || die "cannot hash inherited material"
-    [ "$ACTUAL_HASH" = "$EXPECTED_HASH" ] || die "inherited material digest does not match its commitment"
+    stage_payload
     commit_generation
     if [ -f "$DEST" ] && cmp -s "$TMP" "$DEST"; then
       [ "$REL" != data/captain-shared.md ] || chmod 444 "$DEST"
@@ -158,6 +174,30 @@ case "$COMMAND" in
     TMP=
     [ "$REL" != data/captain-shared.md ] || chmod 444 "$DEST"
     printf 'pushed: %s\n' "$REL"
+    ;;
+  project-registry)
+    stage_payload
+    commit_generation
+    if [ ! -f "$DEST" ]; then
+      printf 'unchanged: %s\n' "$REL"
+      exit 0
+    fi
+    if ! OUT=$(fm_project_registry_converge "$TMP" "$DEST"); then
+      die "cannot converge remote project registry"
+    fi
+    rm -f -- "$TMP" || die "cannot remove staged project registry"
+    TMP=
+    if [ -n "$OUT" ]; then
+      printf 'pushed: %s\n' "$REL"
+      while IFS=$'\t' read -r project old new; do
+        [ -n "$project" ] || continue
+        fm_project_registry_report_line "$HOME_REAL" "$project" "$old" "$new"
+      done <<EOF
+$OUT
+EOF
+    else
+      printf 'unchanged: %s\n' "$REL"
+    fi
     ;;
   absent)
     [ "$EXPECTED_BYTES" -eq 0 ] || die "absent inheritance has a nonzero payload commitment"

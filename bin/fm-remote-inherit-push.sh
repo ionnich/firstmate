@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# Push the declared inherited-material allowlist to one remote secondmate route.
+# Push the declared inherited-material allowlist and the project-registry merge
+# payload to one remote secondmate route.
 # Usage: fm-remote-inherit-push.sh <secondmate-id> <generation>
 #
 # The item set is derived from the ONE declared owner
 # (FM_INHERITABLE_CONFIG in bin/fm-config-inherit-lib.sh), the same declaration
 # the receiving bin/fm-remote-inherit.sh enforces, so the two implementations in
 # one code revision cannot drift silently. Different local and remote revisions
-# fail closed as documented by that owner. FM_CONFIG_INHERIT_LIVE=1 marks a live
-# convergence push into an already-running home and skips session-scoped items,
-# exactly as the local propagation path does.
+# fail closed as documented by that owner. The project registry is sent
+# separately as a per-project merge payload, never as a whole-file mirror.
+# FM_CONFIG_INHERIT_LIVE=1 marks a live convergence push into an already-running
+# home and skips session-scoped items, exactly as the local propagation path does.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -52,6 +54,29 @@ EMPTY="$TMP/empty"
 : > "$EMPTY"
 EMPTY_HASH=$(sha256_file "$EMPTY") || die "cannot hash empty inheritance payload"
 
+# An absent primary registry still sends an empty merge marker so an older
+# generation cannot arrive later and restore stale shared posture.
+PROJECT_REGISTRY="$DATA/projects.md"
+PROJECT_REGISTRY_SNAPSHOT="$EMPTY"
+PROJECT_REGISTRY_BYTES=0
+PROJECT_REGISTRY_HASH="$EMPTY_HASH"
+project_registry_present=$(fm_config_source_present "$PROJECT_REGISTRY") \
+  || die "cannot inspect inherited source: $PROJECT_REGISTRY"
+if [ "$project_registry_present" = 1 ]; then
+  [ -f "$PROJECT_REGISTRY" ] && [ ! -L "$PROJECT_REGISTRY" ] \
+    || die "inherited source is unsafe: $PROJECT_REGISTRY"
+  [ "$(file_link_count "$PROJECT_REGISTRY")" = 1 ] \
+    || die "inherited source is hardlinked: $PROJECT_REGISTRY"
+  PROJECT_REGISTRY_SNAPSHOT="$TMP/data_projects.md"
+  cp -p -- "$PROJECT_REGISTRY" "$PROJECT_REGISTRY_SNAPSHOT" \
+    || die "cannot snapshot inherited source: $PROJECT_REGISTRY"
+  [ -f "$PROJECT_REGISTRY_SNAPSHOT" ] && [ ! -L "$PROJECT_REGISTRY_SNAPSHOT" ] \
+    || die "inherited source snapshot is unsafe: $PROJECT_REGISTRY"
+  PROJECT_REGISTRY_BYTES=$(LC_ALL=C wc -c < "$PROJECT_REGISTRY_SNAPSHOT" | tr -d ' ')
+  PROJECT_REGISTRY_HASH=$(sha256_file "$PROJECT_REGISTRY_SNAPSHOT") \
+    || die "cannot hash inherited source: $PROJECT_REGISTRY"
+fi
+
 ITEMS=$(fm_config_inherit_items)
 while IFS= read -r rel; do
   [ -n "$rel" ] || continue
@@ -89,3 +114,6 @@ while IFS= read -r rel; do
 done <<EOF
 $ITEMS
 EOF
+"$SCRIPT_DIR/fm-on.sh" --stdin "$ID" fm-remote-inherit.sh project-registry \
+  data/projects.md "$PROJECT_REGISTRY_BYTES" "$PROJECT_REGISTRY_HASH" "$GENERATION" \
+  < "$PROJECT_REGISTRY_SNAPSHOT"

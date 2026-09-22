@@ -159,7 +159,7 @@ Launch or recover the remote second mate with the same command used for a local 
 bin/fm-spawn.sh <id> --secondmate
 ```
 
-The primary resolves the verified secondmate harness and optional model and effort, runs the same readiness gate the seed runs, transfers the inherited-material allowlist, and asks the remote host to launch on Herdr in `fm-remote`.
+The primary resolves the verified secondmate harness and optional model and effort, runs the same readiness gate the seed runs, transfers the inherited-material allowlist and the per-project `data/projects.md` registry merge, and asks the remote host to launch on Herdr in `fm-remote`.
 All remote secondmates on one host share `fm-remote` and retain separate `2ndmate-<id>` workspaces inside it.
 An explicit request for any other backend is refused rather than honored, and the remote host refuses one too.
 An existing remote endpoint recorded in another Herdr session, including `default`, is classified as unverified and left untouched; launch, liveness recovery, control, and retirement refuse it until an operator explicitly migrates it instead of attempting a live cutover.
@@ -226,9 +226,11 @@ There is no two-phase journal and no additional tasks-axi release requirement.
 
 ## Sync, update, and retirement
 
-Locked startup convergence and `bin/fm-config-push.sh` transfer only the declared inherited-material allowlist.
+Locked startup convergence and `bin/fm-config-push.sh` transfer the declared inherited-material allowlist plus a per-project `data/projects.md` registry merge; every other inherited item stays on that declared allowlist.
 Changed live routes receive a marked instruction to re-read the transferred files.
 The primary records that remote nudge before delivery and retries it during locked startup convergence after a failed send.
+An un-synced remote code root fails the whole remote inheritance transfer rather than part of it, and that route then withholds its reread instruction until the root advances: the registry merge is one more item under the same intentional fail-closed revision contract as the allowlist, with no version negotiation of its own ([`bin/fm-config-inherit-lib.sh`](../bin/fm-config-inherit-lib.sh) header owns that rule).
+The reported reason names the failing send rather than an earlier item's success.
 Local secondmates retain their generation-specific local pointer contract; remote transfers do not copy those primary-local instruction paths.
 
 A live remote second mate is restarted with `relaunch`, which runs the ordinary [control plane](agent-control.md) on that host: the endpoint record there was written by a host-local launch and carries no remote placement, so the transaction, its checkpoint, and its postconditions are the local ones.
@@ -250,7 +252,7 @@ Retirement is executed on the configured host and refuses while the remote home 
 It closes only the retiring secondmate's panes or `2ndmate-<id>` workspace in `fm-remote`; it never stops the shared session or removes a sibling secondmate's workspace or panes.
 SSH exit 255 preserves both the route and local records because completion is unknown.
 `--force` remains the explicit discard path and requires the same captain authority as local secondmate discard.
-No generic remote delete or write surface exists: remote writes are confined to inherited allowlist files and backlog handoff scratch files, and remote home removal is reachable only through guarded secondmate retirement.
+No generic remote delete or write surface exists: remote writes are confined to inherited allowlist files, the per-project `data/projects.md` registry merge, and backlog handoff scratch files, and remote home removal is reachable only through guarded secondmate retirement.
 
 ## Verification
 
