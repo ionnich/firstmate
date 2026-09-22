@@ -53,6 +53,9 @@
 #     honest re-read steer and is reported as a nudge, never as a reload.
 # A positively dead or missing endpoint has no agent to replace and is left to
 # the ordinary startup recovery.
+# A dormant mate (state/<id>.dormant, owned by bin/fm-secondmate-dormancy-lib.sh)
+# is deliberately asleep, not a divergence: it is skipped silently, reaches
+# neither set, and its home is left on its current bytes on purpose.
 #
 # A fast-forward that lands changes bytes under bin/ in place, which desyncs
 # the trust binding of any locally armed fm-procevent-when watch whose action
