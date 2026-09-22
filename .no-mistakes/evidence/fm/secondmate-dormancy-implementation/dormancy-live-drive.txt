@@ -1,0 +1,28 @@
+Live drive of fm-secondmate-dormancy feature (target commit b0d31ce, branch fm/secondmate-dormancy-implementation).
+
+Environment: GNU bash 5.3.15, jq 1.7.1, macOS. NO_MISTAKES_GATE unset, FM_GATE_REFUSE_BYPASS=1 (test-harness escape hatch, same as tests/lib.sh exports).
+
+== Core lifecycle: enter / idempotent / verb aliases ==
+$ fm-secondmate-dormancy.sh mate enter
+dormant: mate
+rc=0
+$ cat $PARENT/state/mate.dormant
+schema=fm-secondmate-dormancy.v1
+$ fm-secondmate-dormancy.sh mate enter
+already-dormant: mate
+rc=0
+$ fm-secondmate-dormancy.sh mate on
+usage: fm-secondmate-dormancy.sh <id> enter|leave
+rc=2   (enter/leave only; on/off aliases refused)
+
+== Adversarial: --key typo must not wake a dormant mate ==
+$ fm-send.sh fm-mate --key        # no key name
+error: --key requires a key name
+rc=1
+marker STILL PRESENT after (mate NOT woken/cleared)
+
+== Adversarial: routine machinery must refuse, not wake ==
+$ FM_SEND_WAKE_DORMANT=0 fm-send.sh fm-mate 'routine request'
+error: routine request refused for dormant secondmate mate
+rc=1
+marker STILL PRESENT after
