@@ -1,0 +1,19 @@
+fm-autonomous-dispatch.sh lock-path — dispatch-root validation moved into the lock-path owner
+=====================================================================================
+
+$ FM_HOME=<home-with-data/autonomous-dispatch> bin/fm-autonomous-dispatch.sh lock-path
+<home>/data/autonomous-dispatch/.lock
+rc=0
+
+$ FM_HOME=<home-without-dispatch-dir> bin/fm-autonomous-dispatch.sh lock-path
+invalid dispatch directory
+rc=1
+
+$ FM_HOME=<home-without-dispatch-dir> bin/fm-autonomous-dispatch.sh lock-path 2>/dev/null
+(no output)
+rc=1
+
+Interpretation: lock-path now validates the dispatch root itself and dies on a
+missing/invalid directory (rc=1), so the merge caller (bin/fm-pr-merge.sh) only
+propagates the refusal through `|| return 1`. The caller's added `2>/dev/null`
+keeps an ordinary home with no dispatch directory quiet.

@@ -1,0 +1,15 @@
+fm_merge_outcome_report — autonomous-dispatch authority is accepted (post-fix)
+===============================================================================
+
+Direct drive of bin/fm-merge-outcome-lib.sh::fm_merge_outcome_report with
+authority=autonomous-dispatch against a real temp home/state dir:
+
+$ bash tests/.__drive_outcome.sh
+report-rc=0
+--- wake queue ---
+1790060079	1	check	merged-task-x1-https://github.com/example/repo/pull/90	check: merge landed: task-x1 https://github.com/example/repo/pull/90 autonomous-dispatch
+
+Interpretation: the report returns 0 and the durable wake queue carries the
+merge outcome tagged `autonomous-dispatch`, so the supervising home learns the
+autonomous merge landed. Before this change the same call returned 2 and wrote
+nothing (see outcome-report-pre-fix.txt).

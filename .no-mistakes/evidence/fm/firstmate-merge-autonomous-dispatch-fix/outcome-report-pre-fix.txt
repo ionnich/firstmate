@@ -1,0 +1,14 @@
+fm_merge_outcome_report — autonomous-dispatch authority rejected (pre-fix, base 941910f)
+=========================================================================================
+
+Same direct drive but sourcing the base-commit copy of bin/fm-merge-outcome-lib.sh
+and its libs (git show 941910f420fe1f487a55dd259de4906a0b0a9792):
+
+$ bash tests/.__drive_outcome_pre.sh
+pre-fix-rc=2
+--- pre-fix wake queue ---
+(no wake queue: pre-fix rejected the authority)
+
+Interpretation: before this change the authority set accepted only
+yolo|away-grant|external, so a reviewed autonomous dispatch's merge returned 2
+and its supervision outcome was never recorded.

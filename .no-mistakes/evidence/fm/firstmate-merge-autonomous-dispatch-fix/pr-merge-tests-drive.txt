@@ -1,0 +1,2 @@
+ok - a missing autonomous-dispatch directory does not block a generation-bound yolo merge
+ok - a dispatch-authorized merge records its outcome tagged autonomous-dispatch

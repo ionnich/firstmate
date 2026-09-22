@@ -1,0 +1,17 @@
+fm_lock_try_acquire — missing parent refuses without .steal recursion
+=====================================================================
+
+Direct drive of bin/fm-wake-lib.sh::fm_lock_try_acquire against a lock path
+whose parent directory does not exist (fm_lock_try_create stubbed to stamp a
+marker, so any create attempt would be visible):
+
+$ bash tests/.__drive_lock.sh
+rc=1
+marker-created=NO
+missing-dir-created=NO
+steal-path-created=NO
+
+Interpretation: the new `[ -d "$(dirname "$lockdir")" ] || return 1` guard
+refuses the acquisition (rc=1) before any lock-create attempt, does not create
+the parent, and does not recurse into the `<lockdir>.steal` path that previously
+looped indefinitely.
