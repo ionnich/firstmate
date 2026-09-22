@@ -97,9 +97,19 @@ fm_test_fake_gh_axi() {
 # set, each send-keys -l payload is appended one per line. Optional
 # FM_FAKE_DUPLICATE_WINDOW is printed from list-windows.
 #
-# The pane path defaults to empty when FM_FAKE_PANE_PATH is unset. Window
-# cleanup and option operations are no-ops. Launch logging is env-gated, so
-# suites that do not set FM_FAKE_LAUNCH_LOG keep a silent send-keys.
+# The stub keeps this fake server's window inventory in a file beside itself:
+# `new-window` records the name it was given, `kill-window` drops the window it
+# was pointed at, and `list-windows` reports what is left. A window target
+# therefore resolves exactly as it does under real tmux, which is what
+# bin/fm-spawn.sh and bin/backends/tmux.sh read it for: the first refuses a
+# window name the session already lists, and the second refuses to trust any
+# foreground read for a window the session cannot find - so an inventory that
+# never reports the window fm-spawn just created makes a live pane read as a
+# missing one.
+#
+# The pane path defaults to empty when FM_FAKE_PANE_PATH is unset. Option
+# operations are no-ops. Launch logging is env-gated, so suites that do not set
+# FM_FAKE_LAUNCH_LOG keep a silent send-keys.
 fm_test_fake_tmux_spawn() {
   local fakebin=$1
   cat > "$fakebin/tmux" <<'SH'
@@ -108,15 +118,43 @@ set -u
 case "$*" in
   *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
 esac
+windows="$(dirname "$0")/.fake-tmux-windows"
 case "${1:-}" in
   display-message) printf 'firstmate\n'; exit 0 ;;
   list-windows)
+    cat "$windows" 2>/dev/null
     if [ -n "${FM_FAKE_DUPLICATE_WINDOW:-}" ]; then
       printf '%s\n' "$FM_FAKE_DUPLICATE_WINDOW"
     fi
     exit 0
     ;;
-  has-session|new-session|new-window|kill-window|set-window-option) exit 0 ;;
+  new-window)
+    wname=
+    prev=
+    for a in "$@"; do
+      [ "$prev" = "-n" ] && wname=$a
+      prev=$a
+    done
+    [ -z "$wname" ] || printf '%s\n' "$wname" >> "$windows"
+    printf '%s\n' '@1'
+    exit 0
+    ;;
+  kill-window)
+    target=
+    prev=
+    for a in "$@"; do
+      [ "$prev" = "-t" ] && target=$a
+      prev=$a
+    done
+    wname=${target##*:}
+    wname=${wname#=}
+    if [ -n "$wname" ] && [ -f "$windows" ]; then
+      grep -Fxv -- "$wname" "$windows" > "$windows.trimmed" 2>/dev/null || true
+      mv "$windows.trimmed" "$windows" 2>/dev/null || true
+    fi
+    exit 0
+    ;;
+  has-session|new-session|set-window-option) exit 0 ;;
   send-keys)
     if [ -n "${FM_FAKE_LAUNCH_LOG:-}" ]; then
       prev=

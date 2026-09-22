@@ -648,6 +648,14 @@ meta_field() { grep "^$2=" "$1" 2>/dev/null | tail -1 | cut -d= -f2-; }
 # launch command (not just meta) can be asserted on. Also answers the
 # `#{pane_current_path}` probe from FM_FAKE_PANE_PATH so this same stub works
 # for a crew/scout (non-secondmate) spawn's treehouse-worktree wait loop.
+#
+# Like fm_test_fake_tmux_spawn, it keeps this fake server's window inventory in
+# a file beside itself: `new-window` records the window name, `kill-window`
+# drops it, and `list-windows` reports what is left. bin/fm-spawn.sh refuses a
+# window name the session already lists and bin/backends/tmux.sh refuses to
+# trust a foreground read for a window it cannot find, so a stub that never
+# reports the window it just created makes a launched Pi worker look like a
+# dead pane.
 make_launch_capturing_tmux() {
   local dir=$1 fakebin="$1/fakebin"
   mkdir -p "$fakebin"
@@ -657,10 +665,40 @@ set -u
 case "$*" in
   *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
 esac
+windows="$(dirname "$0")/.fake-tmux-windows"
 case "${1:-}" in
   display-message) printf 'firstmate\n'; exit 0 ;;
-  list-windows) exit 0 ;;
-  has-session|new-session|new-window|kill-window) exit 0 ;;
+  list-windows)
+    cat "$windows" 2>/dev/null
+    exit 0
+    ;;
+  new-window)
+    wname=
+    prev=
+    for a in "$@"; do
+      [ "$prev" = "-n" ] && wname=$a
+      prev=$a
+    done
+    [ -z "$wname" ] || printf '%s\n' "$wname" >> "$windows"
+    printf '%s\n' '@1'
+    exit 0
+    ;;
+  kill-window)
+    target=
+    prev=
+    for a in "$@"; do
+      [ "$prev" = "-t" ] && target=$a
+      prev=$a
+    done
+    wname=${target##*:}
+    wname=${wname#=}
+    if [ -n "$wname" ] && [ -f "$windows" ]; then
+      grep -Fxv -- "$wname" "$windows" > "$windows.trimmed" 2>/dev/null || true
+      mv "$windows.trimmed" "$windows" 2>/dev/null || true
+    fi
+    exit 0
+    ;;
+  has-session|new-session) exit 0 ;;
   send-keys)
     if [ -n "${FM_FAKE_LAUNCH_LOG:-}" ]; then
       prev=
@@ -2222,9 +2260,17 @@ SH
       "$ROOT/bin/fm-config-push.sh" > "$first_out" 2>&1
   ) &
   first_pid=$!
-  for _ in $(seq 1 100); do
+  # Rendezvous on the first push actually reaching pointer delivery. The wait
+  # is a deadline, not a latency assertion: getting there costs the push a
+  # guard pass, the per-item config comparison, and the durable-inbox enqueue
+  # plus its doorbell, which is seconds of forked work on a loaded or slow
+  # host. What this test needs is the second push starting while the first
+  # still holds its send, and the wrapper above holds $marker for that whole
+  # send, so a later rendezvous keeps the overlap intact.
+  for _ in $(seq 1 1200); do
     [ -e "$entered" ] && break
-    sleep 0.02
+    kill -0 "$first_pid" 2>/dev/null || break
+    sleep 0.05
   done
   [ -e "$entered" ] || fail "first config push did not reach pointer delivery"
   first_instr=$(reread_instruction_path "$w/sm") \

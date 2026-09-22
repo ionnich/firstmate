@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 SCRIPT="$ROOT/bin/fm-autonomous-dispatch.sh"
 DEPLOY="$ROOT/bin/fm-autonomous-deploy.sh"
