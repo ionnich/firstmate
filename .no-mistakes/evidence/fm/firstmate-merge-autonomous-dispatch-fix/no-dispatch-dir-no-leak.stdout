@@ -1,0 +1,17 @@
+== rc ==
+0
+== stderr ==
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e /Users/nich/.no-mistakes/worktrees/3bc3ee2d971b/01M34RBX90FXTDMD2XFGSXTHK4/.pi/extensions/fm-primary-turnend-guard.ts -e /Users/nich/.no-mistakes/worktrees/3bc3ee2d971b/01M34RBX90FXTDMD2XFGSXTHK4/.pi/extensions/fm-primary-pi-watch.ts if the extensions are not loaded.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+verified: https://github.com/example/repo/pull/82 is open and mergeable, with every required check green at head afafafafafafafafafafafafafafafafafafafaf
+== leak check: grep 'invalid dispatch directory' stderr ==
+CLEAN: no 'invalid dispatch directory' on stderr
+== state/.wake-queue ==
+1790088477	1	check	merged-task-x1-https://github.com/example/repo/pull/82	check: merge landed: task-x1 https://github.com/example/repo/pull/82 yolo
+== dispatch dir still absent? ==
+ABSENT (correct)

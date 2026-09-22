@@ -1,0 +1,8 @@
+== case 1: valid dispatch root -> lock-path prints path, rc 0 ==
+rc=0 stdout=[/private/tmp/fm-lockpath.udw1Ku/home/data/autonomous-dispatch/.lock] stderr=[]
+== case 2: missing dispatch root -> lock-path dies 'invalid dispatch directory', rc 1 ==
+rc=1 stdout=[] stderr=[invalid dispatch directory]
+== case 3: missing dispatch root with 2>/dev/null (merge caller) -> silent, rc 1 ==
+rc=1 stdout=[]
+== case 4: symlink dispatch root -> dies 'invalid dispatch directory' ==
+rc=1 stdout=[] stderr=[invalid dispatch directory]
