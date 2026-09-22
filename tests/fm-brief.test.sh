@@ -642,6 +642,7 @@ test_secondmate_marked_request_reporting_contract() {
     "secondmate charter still tells the mate to pass a hand path to the helper"
   assert_grep 'bin/fm-secondmate-report.sh --key <slug> <verb> <corr_id> <note>' "$brief" \
     "secondmate charter did not document --key for closing a keyed marked request"
+  # shellcheck disable=SC2016 # single quotes are deliberate: the backticks must stay literal
   assert_grep 'a `resolved` line missing that `--key` only closes the unkeyed default decision' "$brief" \
     "secondmate charter did not warn that a resolved line without --key leaves a keyed record open"
   assert_grep 'For a terse result, a status line is the whole answer.' "$brief" \

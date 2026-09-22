@@ -25,8 +25,11 @@ lock="$root/.lock"
 lock_held=0
 release_lock() { [ "$lock_held" = 0 ] || fm_lock_release "$lock" || true; }
 trap release_lock EXIT
-acquire_lock() {
+validate_root() {
   [ -d "$root" ] && [ ! -L "$root" ] || die 'invalid dispatch directory'
+}
+acquire_lock() {
+  validate_root
   [ "${FM_AUTONOMOUS_DISPATCH_LOCK_HELD:-}" = 1 ] || { fm_lock_acquire_wait "$lock"; lock_held=1; }
 }
 
@@ -142,7 +145,9 @@ case "${1:-}" in
     acquire_lock
     answer "$3" "$5" "$7"
     ;;
-  lock-path) printf '%s\n' "$lock" ;;
+  lock-path)
+    validate_root
+    printf '%s\n' "$lock" ;;
   revoke|end)
     acquire_lock
     [ -f "$active" ] && rm "$active"
