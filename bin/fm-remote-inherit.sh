@@ -191,7 +191,7 @@ case "$COMMAND" in
       printf 'pushed: %s\n' "$REL"
       while IFS=$'\t' read -r project old new; do
         [ -n "$project" ] || continue
-        printf 'SECONDMATE_SYNC: secondmate home %s: project registry for %s converged to primary posture: %s -> %s\n' "$HOME_REAL" "$project" "$old" "$new"
+        fm_project_registry_report_line "$HOME_REAL" "$project" "$old" "$new"
       done <<EOF
 $OUT
 EOF

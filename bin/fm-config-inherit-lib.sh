@@ -480,7 +480,7 @@ propagate_project_registry() {
   fi
   while IFS=$'\t' read -r project old new; do
     [ -n "$project" ] || continue
-    printf 'SECONDMATE_SYNC: secondmate home %s: project registry for %s converged to primary posture: %s -> %s\n' "$dest_home" "$project" "$old" "$new"
+    fm_project_registry_report_line "$dest_home" "$project" "$old" "$new"
     record_inheritable_config_result "data/projects.md" pushed "$project: $old -> $new"
   done <<EOF
 $out
