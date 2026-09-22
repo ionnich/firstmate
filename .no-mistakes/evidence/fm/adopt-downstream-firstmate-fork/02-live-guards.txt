@@ -1,0 +1,18 @@
+== guard: foreign origin never repointed ==
+foreign: source skipped: origin is not a firstmate update source
+origin before=https://github.com/someoneelse/firstmate
+origin after =https://github.com/someoneelse/firstmate
+PASS: foreign origin unchanged
+error: No such remote 'upstream'
+
+== guard: unrecognized upstream never half-adopted ==
+upforeign: source skipped: upstream remote carries a different URL
+origin  : https://github.com/kunchenguid/firstmate
+upstream: https://github.com/example.invalid/other/upstream
+
+== guard: adoption never moves HEAD (unlanded work preserved) ==
+HEAD before=d3217811a1257275df5d4edca1daae1b166899c6 after=d3217811a1257275df5d4edca1daae1b166899c6
+PASS: HEAD unmoved
+
+== non-repo target skipped ==
+plain: source skipped: not a git work tree

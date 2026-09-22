@@ -1,0 +1,21 @@
+== live drive: fm-remote-adopt.sh against real github URLs (no env override) ==
+$ bin/fm-remote-adopt.sh --label home "$S/parent"
+home: source adopted (origin -> fork, upstream -> read-only reference)
+  origin        -> https://github.com/ionnich/firstmate
+  upstream      -> https://github.com/kunchenguid/firstmate
+  upstream push -> fm-read-only-reference
+
+== idempotent re-run ==
+home: source current
+
+== never publish upstream: real push attempt ==
+fatal: 'fm-read-only-reference' does not appear to be a git repository
+fatal: Could not read from remote repository.
+
+Please make sure you have the correct access rights
+and the repository exists.
+push exit=128
+
+== converged home origin is a live fetchable update source ==
+a00e4cf36eda70b3ae38baaa01364b2c40c767cd	HEAD
+a00e4cf36eda70b3ae38baaa01364b2c40c767cd	refs/heads/main

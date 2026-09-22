@@ -1,0 +1,18 @@
+== live: full fm-update.sh run against the real fork ==
+(primary and one registered secondmate home, both cloned from https://github.com/ionnich/firstmate)
+primary origin: https://github.com/ionnich/firstmate
+mate1   origin: https://github.com/ionnich/firstmate
+
+$ FM_ROOT_OVERRIDE=$S/primary FM_HOME=$S/home FM_STATE_OVERRIDE=$S/home/state bin/fm-update.sh
+firstmate: source adopted (origin -> fork, upstream -> read-only reference)
+firstmate: already current
+secondmate mate1: source adopted (origin -> fork, upstream -> read-only reference)
+secondmate mate1: already current
+reread-firstmate: no
+restart-secondmates: none
+nudge-secondmates: none
+exit=0
+
+== post-run remote state ==
+primary: origin=https://github.com/ionnich/firstmate upstream=https://github.com/kunchenguid/firstmate push=fm-read-only-reference
+mate1  : origin=https://github.com/ionnich/firstmate upstream=https://github.com/kunchenguid/firstmate push=fm-read-only-reference

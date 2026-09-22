@@ -1,0 +1,31 @@
+== intent precondition: ionnich/firstmate is the update source, carries landed work, no open PR ==
+repo: https://api.github.com/repos/ionnich/firstmate
+fork: True | default_branch: main | parent: kunchenguid/firstmate
+
+open PRs on ionnich/firstmate:
+[]
+
+ionnich/firstmate main:
+a00e4cf36eda70b3ae38baaa01364b2c40c767cd	HEAD
+a00e4cf36eda70b3ae38baaa01364b2c40c767cd	refs/heads/main
+kunchenguid/firstmate main (read-only reference):
+ada21f5b813f8a19e00f44c50555104cb481d3ac	HEAD
+ada21f5b813f8a19e00f44c50555104cb481d3ac	refs/heads/main
+
+fork main vs parent main (compare):
+status: diverged | ahead_by: 15 | behind_by: 69
+  67807677bdef Fix Pi exec_bridge session-lock misclassification
+  26c8d46e14c0 Add Finks DDD routing skill
+  dbfc284cc6b9 Recognize bun-wrapped Pi as a live session lock holder
+  f80d675e365b fix(bin): validate Pi model and confirm launch before marking busy (#2
+  d67a4019941a fix(secondmate): converge project registry drift at every propagation 
+  67b61892b0b2 fix(bin): add --key to fm-secondmate-report.sh for keyed decision clos
+  29626a63d9d4 Add ask-human skill for shaping captain decision questions (#5)
+  294b4882fe98 Merge pull request #6 from ionnich/fm/publish-unpushed-2026-09-19
+  3dc74b63cc58 Add fm-ext.sh for fleet-wide Pi extension install/remove (#7)
+  941910f420fe Simplify autonomous dispatch (#8)
+  3c1d34a88584 ci: repair red base-lane checks for firstmate (#12)
+  29d1f84d0a4f fix(merge): record autonomous-dispatch authority for supervised merge 
+  681c487b15e2 fix: propagate project registry convergence to remote secondmate homes
+  9ff99d6e6ad5 feat(secondmate): add dormancy lifecycle for idle secondmates (#10)
+  a00e4cf36eda fix: sync fork with upstream main (#13)
