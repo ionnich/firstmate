@@ -913,13 +913,11 @@ require_away_merge_grant() {
 }
 
 require_autonomous_dispatch_grant() {
-  local generation grant lock dispatch_root
+  local generation grant lock
   generation=$MERGE_EXPECTED_SPAWN_GEN
   [ -n "$generation" ] || return 1
   if [ -z "$MERGE_DISPATCH_LOCK" ]; then
-    lock=$(FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-autonomous-dispatch.sh" lock-path) || return 1
-    dispatch_root=${lock%/.lock}
-    [ -d "$dispatch_root" ] && [ ! -L "$dispatch_root" ] || return 1
+    lock=$(FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-autonomous-dispatch.sh" lock-path 2>/dev/null) || return 1
     fm_lock_acquire_wait "$lock" || return 1
     MERGE_DISPATCH_LOCK=$lock
   fi

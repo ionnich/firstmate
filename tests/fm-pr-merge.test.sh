@@ -2147,6 +2147,35 @@ test_secondmate_without_parent_binding_is_loud() {
   pass "a secondmate home that cannot report upward says so instead of merging in silence"
 }
 
+# A merge the reviewed autonomous dispatch authorized must record its
+# supervision outcome. The merge gate tags that authority, so the outcome
+# publication must accept the same tag rather than report the merge as
+# unrecorded.
+test_dispatch_authorized_merge_records_its_outcome() {
+  local case_dir rc url head home gen
+  url=https://github.com/example/repo/pull/90
+  head=cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd
+  case_dir=$(make_case dispatch-present-authorizes)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$head"
+  gen=fixture-task-x1
+  printf '\nspawn_gen=%s\nyolo=off\n' "$gen" >> "$case_dir/state/task-x1.meta"
+  home=$(cd "$case_dir/home" && pwd -P)
+  mkdir -p "$home/data/autonomous-dispatch"
+  cat > "$home/data/autonomous-dispatch/active.json" <<JSON
+{"schema":"fm-autonomous-dispatch.v1","id":"dispatch-1","reviewed_revision":"review-1","reviewed_by":"captain","expires_at":null,"members":[{"home":"$home","task_id":"task-x1","mode":"no-mistakes","project":"$case_dir/project","launch":{"project":"$case_dir/project","mode":"no-mistakes","yolo":"off"},"deploy_environments":[],"excluded_deploy_environments":[],"full_autonomy":true,"spawn_gen":"$gen"}]}
+JSON
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "dispatch-present-authorizes: a reviewed dispatch merge should succeed"
+  assert_logged_gh_merge "$case_dir" 90 example/repo --squash
+  assert_grep "merge landed: task-x1 $url autonomous-dispatch" "$case_dir/state/.wake-queue" \
+    "dispatch-present-authorizes: the merge outcome was not recorded for supervision"
+  pass "a dispatch-authorized merge records its outcome tagged autonomous-dispatch"
+}
+
 test_github_zero_exit_queue_required_refuses_with_exact_retry
 test_github_closed_unqueued_outcome_omits_retry_flags
 test_github_agreeing_queue_rules_keep_retry_guidance
@@ -3124,6 +3153,7 @@ test_allow_red_still_waives_only_the_current_failure
 test_allow_red_is_refused_while_away
 test_allow_red_requires_one_separate_name
 test_missing_autonomous_dispatch_directory_does_not_block_yolo_merge
+test_dispatch_authorized_merge_records_its_outcome
 test_away_grant_and_yolo_and_hold_for_return
 test_away_posture_refuses_asynchronous_merge_paths
 test_away_plan_gated_403_does_not_block_the_merge
