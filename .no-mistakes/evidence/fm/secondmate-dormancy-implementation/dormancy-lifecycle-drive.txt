@@ -1,0 +1,13 @@
+### enter (idle, never-launched mate)
+dormant: mate
+rc=0 marker=PRESENT
+### enter again (idempotent)
+already-dormant: mate
+### sweep while dormant
+live records: []
+### non-secondmate refusal
+error: mate is not a secondmate
+rc=1
+### routine send refuses a dormant mate
+error: routine request refused for dormant secondmate mate
+rc=1

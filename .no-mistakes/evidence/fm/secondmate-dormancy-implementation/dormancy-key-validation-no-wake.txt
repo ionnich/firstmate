@@ -1,0 +1,11 @@
+dormant: mate
+### typo'd --key (no key name) against dormant mate
+marker before: PRESENT
+error: --key requires a key name
+rc=1
+marker after: PRESENT
+### --fire-and-forget <hex> --key conflict against dormant mate
+marker before: PRESENT
+error: --fire-and-forget cannot accompany --key
+rc=1
+marker after: PRESENT
