@@ -1,0 +1,2 @@
+pushed: data/projects.md
+SECONDMATE_SYNC: secondmate home /private/var/folders/xd/1mdy_9c91vbc_96v6fy10zq80000gn/T/tmp.QIAVHAUEYr/remote-home: project registry for alpha converged to primary posture: - alpha [direct-PR] - alpha project (added 2026-08-02) -> - alpha [direct-PR +yolo] - alpha project (added 2026-08-02)

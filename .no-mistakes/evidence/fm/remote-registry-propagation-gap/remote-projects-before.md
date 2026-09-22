@@ -1,0 +1,2 @@
+- alpha [direct-PR] - alpha project (added 2026-08-02)
+- remote-local [direct-PR] - remote-only project (added 2026-08-02)
