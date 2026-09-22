@@ -1,0 +1,24 @@
+# live drive: fm-remote-inherit.sh project-registry (receiver), real FM_HOME, no mocks
+
+$ FM_HOME=$REMOTE_HOME bin/fm-remote-inherit.sh project-registry data/projects.md 61 2fecc9286aa6a1544e5b8aa1266e6d9da1a518e4b1788b35822dd50dc5e6bde8 1 < primary
+pushed: data/projects.md
+SECONDMATE_SYNC: secondmate home /private/var/folders/xd/1mdy_9c91vbc_96v6fy10zq80000gn/T/tmp.tst8CmyrLi/remote-home: project registry for alpha converged to primary posture: - alpha [direct-PR] - alpha project (added 2026-08-02) -> - alpha [direct-PR +yolo] - alpha project (added 2026-08-02)
+
+# resulting remote data/projects.md
+- alpha [direct-PR +yolo] - alpha project (added 2026-08-02)
+- remote-local [direct-PR] - remote-only project (added 2026-08-02)
+
+# idempotent repeat
+unchanged: data/projects.md
+
+# empty primary marker (generation 2)
+unchanged: data/projects.md
+
+# stale older payload (generation 1) rejected
+error: inheritance write generation is superseded
+
+# ordinary put data/projects.md rejected
+error: path is not inherited material: data/projects.md
+
+# project-registry non-projects.md path rejected
+error: project-registry path must be data/projects.md

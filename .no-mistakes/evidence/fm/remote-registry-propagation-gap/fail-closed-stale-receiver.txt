@@ -1,0 +1,4 @@
+# fail-closed: base-commit (un-synced) receiver sees the new project-registry verb
+$ FM_HOME=$REMOTE_HOME old-root/bin/fm-remote-inherit.sh project-registry data/projects.md 61 2fecc9286aa6a1544e5b8aa1266e6d9da1a518e4b1788b35822dd50dc5e6bde8 1 < primary
+error: path is not inherited material: data/projects.md
+exit=1

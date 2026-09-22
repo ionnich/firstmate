@@ -1,0 +1,18 @@
+ok - fm_project_registry_line reads a project's line verbatim
+ok - fm_project_registry_line fails for a project the registry does not have
+ok - fm_project_registry_line fails when the registry file is absent
+ok - fm_project_registry_names lists every registered project name
+ok - fm_project_registry_converge reports the exact old and new line for a drifted project
+ok - fm_project_registry_converge does not report a project whose posture already matched
+ok - fm_project_registry_converge rewrites the destination's drifted line verbatim from the primary
+ok - fm_project_registry_converge never touches a project entry known only to the destination
+ok - fm_project_registry_converge leaves an already-converged project's line untouched
+ok - fm_project_registry_converge is idempotent: nothing left to report on a second pass
+ok - fm_project_registry_converge is a true no-op (no file churn) when nothing has drifted
+ok - fm_project_registry_converge is a no-op when the destination registry does not exist
+ok - fm_project_registry_converge is a no-op when the primary registry does not exist
+ok - propagate_project_registry converges a drifted secondmate registry and reports it as SECONDMATE_SYNC
+ok - propagate_project_registry is silent once the secondmate registry is converged
+ok - remote receiver merges shared project posture and preserves remote-only entries
+ok - empty remote registry markers advance generation without deleting local entries
+ok - remote receiver reserves data/projects.md for per-project merges
