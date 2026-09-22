@@ -651,13 +651,8 @@ meta_field() { grep "^$2=" "$1" 2>/dev/null | tail -1 | cut -d= -f2-; }
 # `#{pane_current_path}` probe from FM_FAKE_PANE_PATH so this same stub works
 # for a crew/scout (non-secondmate) spawn's treehouse-worktree wait loop.
 #
-# Like fm_test_fake_tmux_spawn, it keeps this fake server's window inventory in
-# a file beside itself: `new-window` records the window name, `kill-window`
-# drops it, and `list-windows` reports what is left. bin/fm-spawn.sh refuses a
-# window name the session already lists and bin/backends/tmux.sh refuses to
-# trust a foreground read for a window it cannot find, so a stub that never
-# reports the window it just created makes a launched Pi worker look like a
-# dead pane.
+# Window inventory comes from the shared fm_test_fake_tmux_inventory helper in
+# tests/fixtures.sh, which owns the new-window/kill-window/list-windows rules.
 make_launch_capturing_tmux() {
   local dir=$1 fakebin="$1/fakebin"
   mkdir -p "$fakebin"
