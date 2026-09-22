@@ -447,7 +447,10 @@ test_registry_backstop_dedup_and_self_exclusion() {
 
   assert_contains "$out" "secondmate reg1: updated " "registry-only secondmate fast-forwarded"
   assert_contains "$out" "secondmate sm1: updated " "meta+registry secondmate fast-forwarded"
-  count=$(printf '%s\n' "$out" | grep -c '^secondmate sm1:' || true)
+  # The dedup observable is the UPDATE status line for that home: the run also
+  # prints one `secondmate sm1: source ...` line for the same home, which is a
+  # report about it rather than a second processing of it.
+  count=$(printf '%s\n' "$out" | grep -cE '^secondmate sm1: (updated|reconciled|already current)' || true)
   [ "$count" -eq 1 ] || fail "secondmate sm1 processed $count times, expected 1 (dedup across meta+registry)"
   assert_not_contains "$out" "secondmate selfish" "firstmate repo re-processed as its own secondmate"
   # sm1 has live metadata, so it is nudged; reg1 has none, so it is not. Pin the

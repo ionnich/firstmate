@@ -27,6 +27,19 @@ Wake, watcher, away-mode, and Relay-specific state mechanics remain with their n
 `AGENTS.md` retains the run-once and read-once operator rules, lock-refusal safety, installation consent, and direct-report recovery boundaries because those facts apply at every session start.
 Ordinary dead-direct-report recovery is owned by `stuck-crewmate-recovery`, while persistent-secondmate recovery is owned by `secondmate-provisioning`.
 
+## Firstmate update source remotes
+
+This section is the single owner of the fleet's update-source contract.
+Every firstmate home - the primary checkout and each registered secondmate home - carries exactly two meaningful remotes: `origin`, the update source its fast-forward advances from, and `upstream`, a read-only reference it never publishes to.
+The approved fleet source is the downstream fork `https://github.com/ionnich/firstmate`, while the retired parent `https://github.com/kunchenguid/firstmate` stays reachable as that reference.
+Git has no fetch-only remote flag, so the reference is made read-only by pointing its push URL at the `fm-read-only-reference` sentinel, which makes any accidental `git push upstream` fail instead of publishing to the parent.
+
+[`bin/fm-remote-adopt.sh`](../bin/fm-remote-adopt.sh) is the one implementation that converges a home onto that contract, and [`bin/fm-update.sh`](../bin/fm-update.sh) calls it for every home it touches before the fetch, so `/updatefirstmate` publishes the fleet onto the fork on the same pass that updates it.
+It writes remote configuration and nothing else - no fetch, push, checkout, reset, or ref write - so it needs no network, and unlanded work, branch state, and the gitignored operational directories are untouched.
+A home whose `origin` is neither the fork nor a local seed path equal to the primary root, and a home whose `upstream` carries some other URL, are left exactly as they are and reported, because someone else's fork is not ours to repoint.
+Every case is idempotent and prints one line per home (`source current`, `source adopted`, or `source skipped: <reason>`), and the local-HEAD secondmate sync never adopts because it never fetches.
+`FM_FIRSTMATE_SOURCE_URL` and `FM_FIRSTMATE_REFERENCE_URL` override the two URLs for tests, and no operator needs them.
+
 ## Calm preference (config/calm)
 
 The Pi Calm extension and the Claude Code Calm mod share the captain's home-local presentation choice in gitignored `config/calm` under the effective Firstmate home, so one `/calm` choice applies on either harness.
