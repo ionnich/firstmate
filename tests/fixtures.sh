@@ -110,17 +110,13 @@ fm_test_fake_gh_axi() {
 # The pane path defaults to empty when FM_FAKE_PANE_PATH is unset. Option
 # operations are no-ops. Launch logging is env-gated, so suites that do not set
 # FM_FAKE_LAUNCH_LOG keep a silent send-keys.
-fm_test_fake_tmux_spawn() {
+# fm_test_fake_tmux_inventory <fakebin>
+# Appends the shared fake-tmux window-inventory rules to <fakebin>/tmux.
+fm_test_fake_tmux_inventory() {
   local fakebin=$1
-  cat > "$fakebin/tmux" <<'SH'
-#!/usr/bin/env bash
-set -u
-case "$*" in
-  *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
-esac
+  cat >> "$fakebin/tmux" <<'SH'
 windows="$(dirname "$0")/.fake-tmux-windows"
 case "${1:-}" in
-  display-message) printf 'firstmate\n'; exit 0 ;;
   list-windows)
     cat "$windows" 2>/dev/null
     if [ -n "${FM_FAKE_DUPLICATE_WINDOW:-}" ]; then
@@ -154,6 +150,23 @@ case "${1:-}" in
     fi
     exit 0
     ;;
+esac
+SH
+}
+
+fm_test_fake_tmux_spawn() {
+  local fakebin=$1
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "$*" in
+  *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
+esac
+SH
+  fm_test_fake_tmux_inventory "$fakebin"
+  cat >> "$fakebin/tmux" <<'SH'
+case "${1:-}" in
+  display-message) printf 'firstmate\n'; exit 0 ;;
   has-session|new-session|set-window-option) exit 0 ;;
   send-keys)
     if [ -n "${FM_FAKE_LAUNCH_LOG:-}" ]; then

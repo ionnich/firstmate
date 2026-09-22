@@ -45,6 +45,8 @@ set -u
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=tests/fixtures.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-ff-lib.sh"
 # shellcheck source=/dev/null
@@ -665,39 +667,11 @@ set -u
 case "$*" in
   *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
 esac
-windows="$(dirname "$0")/.fake-tmux-windows"
+SH
+  fm_test_fake_tmux_inventory "$fakebin"
+  cat >> "$fakebin/tmux" <<'SH'
 case "${1:-}" in
   display-message) printf 'firstmate\n'; exit 0 ;;
-  list-windows)
-    cat "$windows" 2>/dev/null
-    exit 0
-    ;;
-  new-window)
-    wname=
-    prev=
-    for a in "$@"; do
-      [ "$prev" = "-n" ] && wname=$a
-      prev=$a
-    done
-    [ -z "$wname" ] || printf '%s\n' "$wname" >> "$windows"
-    printf '%s\n' '@1'
-    exit 0
-    ;;
-  kill-window)
-    target=
-    prev=
-    for a in "$@"; do
-      [ "$prev" = "-t" ] && target=$a
-      prev=$a
-    done
-    wname=${target##*:}
-    wname=${wname#=}
-    if [ -n "$wname" ] && [ -f "$windows" ]; then
-      grep -Fxv -- "$wname" "$windows" > "$windows.trimmed" 2>/dev/null || true
-      mv "$windows.trimmed" "$windows" 2>/dev/null || true
-    fi
-    exit 0
-    ;;
   has-session|new-session) exit 0 ;;
   send-keys)
     if [ -n "${FM_FAKE_LAUNCH_LOG:-}" ]; then
