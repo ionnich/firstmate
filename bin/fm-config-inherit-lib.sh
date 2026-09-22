@@ -53,6 +53,12 @@
 # other. A local and remote code root that disagree about this list must be
 # reconciled by the ordinary remote sync/update path before the transfer
 # succeeds; there is no separate allowlist version negotiation.
+# The project registry is the second item under that same revision contract and
+# deliberately gets no negotiation of its own: its per-project merge is a
+# separate sender/receiver command rather than an allowlist entry, so a remote
+# code root that predates it fails the whole remote inheritance transfer exactly
+# as a disagreement over the allowlist does, and such a route withholds its
+# reread nudge until that root advances.
 #
 # shellcheck source=bin/fm-startup-memory-budget-lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-startup-memory-budget-lib.sh"

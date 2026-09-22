@@ -229,6 +229,8 @@ There is no two-phase journal and no additional tasks-axi release requirement.
 Locked startup convergence and `bin/fm-config-push.sh` transfer the declared inherited-material allowlist plus a per-project `data/projects.md` registry merge; every other inherited item stays on that declared allowlist.
 Changed live routes receive a marked instruction to re-read the transferred files.
 The primary records that remote nudge before delivery and retries it during locked startup convergence after a failed send.
+An un-synced remote code root fails the whole remote inheritance transfer rather than part of it, and that route then withholds its reread instruction until the root advances: the registry merge is one more item under the same intentional fail-closed revision contract as the allowlist, with no version negotiation of its own ([`bin/fm-config-inherit-lib.sh`](../bin/fm-config-inherit-lib.sh) header owns that rule).
+The reported reason names the failing send rather than an earlier item's success.
 Local secondmates retain their generation-specific local pointer contract; remote transfers do not copy those primary-local instruction paths.
 
 A live remote second mate is restarted with `relaunch`, which runs the ordinary [control plane](agent-control.md) on that host: the endpoint record there was written by a host-local launch and carries no remote placement, so the transaction, its checkpoint, and its postconditions are the local ones.

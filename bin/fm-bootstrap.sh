@@ -356,6 +356,18 @@ fleet_sync() {
   rm -f "$tmp"
 }
 
+# The failure reason for a remote inherited-material push. The receiver's own
+# diagnostic is the honest reason, and the merged output also carries each
+# earlier item's success line, so first_line would report one of those instead.
+# Prefer the last `error:` line and fall back to the last non-empty line,
+# whitespace-collapsed exactly as first_line does.
+remote_inherit_failure_reason() {  # <merged-push-output>
+  local reason
+  reason=$(printf '%s\n' "$1" | awk '/^error:/ { last = $0 } END { if (last != "") print last }')
+  [ -n "$reason" ] || reason=$(printf '%s\n' "$1" | awk 'NF { last = $0 } END { print last }')
+  printf '%s\n' "$reason" | sed 's/[[:space:]]\{1,\}/ /g'
+}
+
 secondmate_sync() {
   # shellcheck source=bin/fm-wake-lib.sh disable=SC1091
   . "$SCRIPT_DIR/fm-wake-lib.sh"
@@ -623,7 +635,7 @@ secondmate_sync() {
       if printf '%s\n' "$inherit_out" | grep -Eq '^(pushed|removed):'; then nudge_needed=1; fi
       printf '%s\n' "$inherit_out" | grep '^SECONDMATE_SYNC:' || true
     else
-      echo "SECONDMATE_SYNC: secondmate $id: skipped: remote inheritance failed on $remote_host: $(first_line "$inherit_out")"
+      echo "SECONDMATE_SYNC: secondmate $id: skipped: remote inheritance failed on $remote_host: $(remote_inherit_failure_reason "$inherit_out")"
       converged=0
     fi
     [ "$remote_pending" -eq 0 ] || nudge_needed=1
