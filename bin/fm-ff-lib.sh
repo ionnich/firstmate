@@ -391,6 +391,17 @@ ff_target() {
 
   # Resolve the fast-forward base from base_mode (see header).
   if [ "$base_mode" = origin ]; then
+    # A caller may own the update-source step. bin/fm-update.sh publishes every
+    # firstmate home onto the fleet's approved source before this fetch, so a home
+    # still pointed at the retired parent or at a local seed path converges on the
+    # very pass that would otherwise skip it. The hook is optional and
+    # caller-defined, exactly like fm_ff_after_secondmate_settled below, so a sync
+    # that shares this library without defining it is unaffected; the local-HEAD
+    # secondmate mode never fetches and so never adopts. An adoption problem is
+    # reported by that step's own line and never blocks the update.
+    if type fm_ff_adopt_source >/dev/null 2>&1; then
+      fm_ff_adopt_source "$dir" "$label" || true
+    fi
     if ! git -C "$dir" remote get-url origin >/dev/null 2>&1; then
       echo "$label: skipped: no origin remote"
       return 0

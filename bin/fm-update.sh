@@ -88,6 +88,19 @@ if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
 fi
 [ $# -eq 0 ] || { usage; exit 1; }
 
+# --- update source ---------------------------------------------------------
+# Every home this pass touches is first published onto the fleet's approved
+# update source, so the fetch below always comes from the downstream fork and the
+# retired parent stays a read-only reference. bin/fm-remote-adopt.sh owns that
+# contract, its guards, and its per-home report lines; this hook is what
+# bin/fm-ff-lib.sh calls before each origin-mode fetch. It is defined here rather
+# than inside the library because a project sync shares that library and must not
+# repoint a project's origin.
+
+fm_ff_adopt_source() {  # <dir> <label>
+  "$SCRIPT_DIR/fm-remote-adopt.sh" --primary-root "$FM_ROOT" --label "$2" "$1"
+}
+
 # --- main firstmate repo ---------------------------------------------------
 
 reread_firstmate="no"

@@ -42,6 +42,7 @@ This touches only the firstmate repo and its own worktrees, never anything under
    bin/fm-update.sh
    ```
    It fast-forwards this firstmate repo's default branch from origin, then updates every registered local or remote secondmate home through its placement-specific guarded path.
+   Before each fetch it also publishes that home onto the fleet's approved update source, printing one `source current` / `source adopted` / `source skipped: <reason>` line per home; [`docs/configuration.md`](../../../docs/configuration.md#firstmate-update-source-remotes) owns that contract and its guards, and a home it declines to repoint is left exactly as it is.
    It prints one status line per target (`updated <old>..<new>` / `reconciled redundant divergence <old>..<new>` / `already current` / `skipped: <reason>`), followed by three action lines that tell you exactly what to do next:
    - `reread-firstmate: yes|no`
    - `restart-secondmates: fm-<id>...|none`
