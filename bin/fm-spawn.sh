@@ -466,6 +466,8 @@ if [ -e "$STATE" ] || [ -L "$STATE" ]; then
 fi
 # shellcheck source=bin/fm-ff-lib.sh
 . "$SCRIPT_DIR/fm-ff-lib.sh"
+# shellcheck source=bin/fm-secondmate-dormancy-lib.sh disable=SC1091
+. "$SCRIPT_DIR/fm-secondmate-dormancy-lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 fm_backlog_directory_present "$STATE" "state directory" || {
@@ -901,6 +903,10 @@ spawn_remote_secondmate() {
   fm_lock_release "$registry_lock" || true
   fm_lock_release "$SPAWN_TASK_LOCK" || true
   "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
+  if ! fm_secondmate_dormancy_clear "$STATE" "$id"; then
+    echo "error: remote secondmate $id launched, but its dormancy marker could not be cleared" >&2
+    return 1
+  fi
   if ! "$SCRIPT_DIR/fm-procevent-remote-reply.sh" arm "$id" >/dev/null; then
     echo "error: remote secondmate $id launched, but its reply source could not be armed; endpoint metadata is preserved" >&2
     return 1
@@ -4443,6 +4449,10 @@ if [ -n "$SPAWN_DEFERRED_SIGNAL" ]; then
 fi
 fm_lock_release "$SPAWN_META_LOCK"
 SPAWN_META_LOCK_HELD=0
+if [ "$KIND" = secondmate ] && ! fm_secondmate_dormancy_clear "$STATE" "$ID"; then
+  echo "error: secondmate $ID launched, but its dormancy marker could not be cleared" >&2
+  exit 1
+fi
 
 SPAWN_DELIVERY=
 [ -z "$MODE" ] || SPAWN_DELIVERY=" mode=$MODE yolo=$YOLO"

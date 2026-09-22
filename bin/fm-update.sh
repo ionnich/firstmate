@@ -53,6 +53,9 @@
 #     honest re-read steer and is reported as a nudge, never as a reload.
 # A positively dead or missing endpoint has no agent to replace and is left to
 # the ordinary startup recovery.
+# A dormant mate (state/<id>.dormant, owned by bin/fm-secondmate-dormancy-lib.sh)
+# is deliberately asleep, not a divergence: it is skipped silently, reaches
+# neither set, and its home is left on its current bytes on purpose.
 #
 # A fast-forward that lands changes bytes under bin/ in place, which desyncs
 # the trust binding of any locally armed fm-procevent-when watch whose action
@@ -188,6 +191,7 @@ if [ -f "$SECONDMATES_MD" ]; then
       continue
     fi
     id=$SECONDMATE_REGISTRY_ID
+    fm_secondmate_is_dormant "$STATE" "$id" && continue
     home=$SECONDMATE_REGISTRY_HOME
     if [ "$SECONDMATE_REGISTRY_REMOTE" -eq 1 ]; then
       if remote_out=$("$SCRIPT_DIR/fm-on.sh" "$id" fm-remote-secondmate-control.sh update "$id" < /dev/null 2>&1); then

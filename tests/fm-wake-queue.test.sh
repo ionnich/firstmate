@@ -490,6 +490,57 @@ SH
   pass "an active turn defers the secondmate stall escalation without cancelling it"
 }
 
+# A mate put to sleep on purpose must not escalate as a stalled wake loop: its
+# stopped watcher cannot advance its own queue, so a row left behind when it
+# went to sleep would nag forever. The gate stays scoped to dormancy - the same
+# frozen queue escalates normally once the mate is awake again.
+test_secondmate_dormancy_suppresses_stall_escalation() {
+  local dir state sub fakebin epoch stall_count
+  dir=$(make_case secondmate-dormant)
+  state="$dir/state"
+  sub="$dir/secondmate"
+  mkdir -p "$sub/state"
+  printf 'mate\n' > "$sub/.fm-secondmate-home"
+  printf 'window=firstmate:fm-mate\nkind=secondmate\nhome=%s\n' "$sub" > "$state/mate.meta"
+  epoch=$(( $(date +%s) - 10 ))
+  printf '%s\t7\tcheck\trouted\tcheck: routed row\n' "$epoch" > "$sub/state/.wake-queue"
+  fakebin="$dir/fakebin"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  list-windows) printf '%s\n' 'firstmate:fm-mate' ;;
+  capture-pane) printf 'ready\n' ;;
+  display-message) printf '0\n' ;;
+  *) exit 0 ;;
+esac
+SH
+  chmod +x "$fakebin/tmux"
+  : > "$state/mate.dormant"
+
+  PATH="$fakebin:$PATH" FM_HOME="$dir" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_STATE_OVERRIDE="$state" FM_SECONDMATE_WAKE_STALL_SECS=1 FM_POLL=1 \
+    FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$ROOT/bin/fm-watch-checkpoint.sh" --seconds 4 \
+    > "$dir/watch-dormant.out" 2> "$dir/watch-dormant.err" || true
+  ! grep -F 'secondmate wake-loop stalled' "$dir/watch-dormant.out" >/dev/null \
+    || fail "a dormant mate was escalated as a stalled wake loop: $(cat "$dir/watch-dormant.out")"
+  [ ! -s "$state/.wake-queue" ] \
+    || fail "a dormant mate published a durable stall notification"
+
+  rm -f "$state/mate.dormant"
+  printf '%s\t%s-7\n' "$epoch" "$epoch" > "$state/.secondmate-wake-progress-mate"
+  PATH="$fakebin:$PATH" FM_HOME="$dir" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_STATE_OVERRIDE="$state" FM_SECONDMATE_WAKE_STALL_SECS=1 FM_POLL=1 \
+    FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$ROOT/bin/fm-watch-checkpoint.sh" --seconds 4 \
+    > "$dir/watch-awake.out" 2> "$dir/watch-awake.err" || true
+  grep -F 'check: secondmate wake-loop stalled: mate=mate row=7' "$dir/watch-awake.out" >/dev/null \
+    || fail "an awake mate's frozen queue was hidden: $(cat "$dir/watch-awake.out")"
+  stall_count=$(grep -c 'secondmate-wake-loop-mate-' "$state/.wake-queue" || true)
+  [ "$stall_count" -eq 1 ] || fail "the awake episode did not publish exactly one notification"
+  pass "a dormant mate suppresses the stall escalation, scoped to dormancy alone"
+}
+
 test_secondmate_stall_marker_rejects_symlink() {
   local dir state sub fakebin marker outside expected epoch
   dir=$(make_case secondmate-stall-marker-symlink)
@@ -1916,6 +1967,7 @@ test_secondmate_foreign_queue_stall_tracks_progress_and_alerts_once
 test_secondmate_declared_pause_rows_do_not_feed_stall_escalation
 test_secondmate_reprovisioned_queue_starts_a_fresh_interval
 test_secondmate_active_turn_defers_stall_until_the_turn_ends
+test_secondmate_dormancy_suppresses_stall_escalation
 test_secondmate_stall_marker_rejects_symlink
 test_acknowledged_stall_publication_survives_pre_marker_crash
 test_empty_prefix_mate_preserves_other_mate_receipt

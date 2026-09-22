@@ -1288,6 +1288,23 @@ EOF
   pass "session start: transient tmux unreadability never licenses a relaunch"
 }
 
+# A mate stopped on purpose is not a dead endpoint. The digest must say so, or a
+# reader mistakes a deliberate sleep for an unexpected death and revives it.
+test_session_start_labels_dormant_mate_endpoint_dormant() {
+  local rec root home fakebin mate log spawned out
+  rec=$(prepare_session_start_secondmate secondmate-dormant-endpoint)
+  IFS='|' read -r root home fakebin mate log spawned <<EOF
+$rec
+EOF
+  printf 'schema=fm-secondmate-dormancy.v1\n' > "$home/state/$SESSION_START_SECOND_MATE_ID.dormant"
+  out=$(run_session_start_secondmate "$root" "$home" "$fakebin" "$mate" "$log" "$spawned" missing)
+  assert_contains "$out" "endpoint: dormant (deliberately stopped; backend=tmux window=firstmate:fm-$SESSION_START_SECOND_MATE_ID)" \
+    "a deliberately slept mate must be labelled dormant in the fleet digest"
+  assert_not_contains "$out" "endpoint: dead (backend=tmux window=firstmate:fm-$SESSION_START_SECOND_MATE_ID)" \
+    "a deliberately slept mate must not be reported as a dead endpoint"
+  pass "session start: a dormant mate endpoint is labelled dormant, not dead"
+}
+
 test_session_start_preserves_proven_bare_shell_recovery() {
   local rec root home fakebin mate log spawned out
   rec=$(prepare_session_start_secondmate secondmate-bare-shell)
@@ -2687,6 +2704,7 @@ test_read_only_session_declares_skipped_network_checks
 test_tasks_axi_compatibility_is_probed_once
 test_session_start_preserves_ambiguous_pi_process
 test_session_start_preserves_transiently_unreadable_tmux
+test_session_start_labels_dormant_mate_endpoint_dormant
 test_session_start_preserves_proven_bare_shell_recovery
 test_session_start_relaunches_herdr_husk_secondmate
 test_status_tail_bounding

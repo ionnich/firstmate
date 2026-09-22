@@ -1063,3 +1063,35 @@ test_scout_reports_include_teardown_reports
 test_backlog_tasks_axi_forms_and_overrides
 test_view_renders_snapshot
 test_view_renders_dead_secondmate_agent_status
+# A deliberately asleep mate stops its pane on purpose. The snapshot must say so
+# and the human view must not render it as a dead agent awaiting recovery.
+test_view_renders_dormant_secondmate_asleep() {
+  local home fakebin out view
+  home=$(make_home dormant-secondmate)
+  fm_write_meta "$home/state/dead-secondmate.meta" \
+    "window=firstmate:fm-dead-secondmate" \
+    "project=$home/secondmate-home" \
+    "harness=codex" \
+    "kind=secondmate" \
+    "mode=secondmate" \
+    "home=$home/secondmate-home" \
+    "projects=alpha, beta"
+  printf 'working: watching delegated scope\n' > "$home/state/dead-secondmate.status"
+  fakebin=$(make_fakebin "$home")
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --json)
+  printf '%s' "$out" | jq -e '
+    .tasks[] | select(.id == "dead-secondmate")
+    | .endpoint.dormant == false and .endpoint.agent_alive == "dead"
+  ' >/dev/null || fail "an awake dead secondmate must keep its dead-agent endpoint read: $out"
+  printf 'schema=fm-secondmate-dormancy.v1\n' > "$home/state/dead-secondmate.dormant"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --json)
+  printf '%s' "$out" | jq -e '
+    .tasks[] | select(.id == "dead-secondmate") | .endpoint.dormant == true
+  ' >/dev/null || fail "the dormancy marker was not projected into the endpoint read: $out"
+  view=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW")
+  assert_contains "$view" "| dead-secondmate | unknown / none | secondmate | $home/secondmate-home | tmux | dormant |" \
+    "view should render a deliberately dormant mate as dormant, not dead"
+  pass "fleet view distinguishes a dormant mate from a dead secondmate agent"
+}
+
+test_view_renders_dormant_secondmate_asleep

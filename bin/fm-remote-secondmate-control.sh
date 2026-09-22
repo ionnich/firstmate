@@ -4,6 +4,7 @@
 # Usage:
 #   fm-remote-secondmate-control.sh launch <id> <harness> <model|-> <effort|-> herdr [traceparent]
 #   fm-remote-secondmate-control.sh relaunch <id> <harness> <model|default|-> <effort|default|->
+#   fm-remote-secondmate-control.sh exit <id>
 #   fm-remote-secondmate-control.sh state <id>
 #   fm-remote-secondmate-control.sh route <id>
 #   fm-remote-secondmate-control.sh send <id> <message> [fire-and-forget]
@@ -252,6 +253,45 @@ cmd_relaunch() {
     FM_SKIP_SECONDMATE_SYNC=1 \
     "$SCRIPT_DIR/fm-control.sh" "${control_args[@]}"
 }
+# Idle gate for a dormancy entry, run on the mate's own host so the answer comes
+# from the home that owns the work. The signal is the secondmate home summary,
+# never the busy classifier: a secondmate arms no busy-state wiring because an
+# idle secondmate pane is healthy by design (bin/fm-busy-lib.sh), so a busy
+# verdict here would report unknown for every healthy mate.
+remote_dormancy_ready() {
+  local id=$1 summary
+  summary=$(FM_HOME="$TARGET_HOME" FM_ROOT_OVERRIDE="$TARGET_HOME" \
+    "$TARGET_HOME/bin/fm-fleet-snapshot.sh" --secondmate-home-summary 2>/dev/null) \
+    || die "remote secondmate $id home summary is unreadable"
+  printf '%s\n' "$summary" \
+    | jq -e '.valid == true and .state == "no_active_work" and (.active_children | length) == 0 and (.queued | length) == 0 and (.decisions_open | length) == 0' \
+    >/dev/null 2>&1 \
+    || die "remote secondmate $id has work or an open decision"
+}
+
+# Stop remote secondmate agent through ordinary local control. An endpoint that
+# is positively GONE has no agent to stop, and the local exit verb refuses that
+# state rather than reporting a stop it cannot prove, so dormancy accepts it:
+# preventing an unwanted respawn is exactly what dormancy is for.
+cmd_exit() {
+  local id=$1 meta state
+  validate_id "$id"
+  validate_home "$id"
+  remote_dormancy_ready "$id"
+  meta=$(meta_path "$id")
+  if [ ! -f "$meta" ]; then
+    return 0
+  fi
+  remote_endpoint_require "$id"
+  state=$(fm_backend_agent_state "$REMOTE_ENDPOINT_BACKEND" "$REMOTE_ENDPOINT_TARGET" 2>/dev/null || printf 'unreadable')
+  [ "$state" != missing ] || return 0
+  HERDR_SESSION="$REMOTE_HERDR_SESSION" FM_HOME="$FM_ROOT" FM_ROOT_OVERRIDE="$FM_ROOT" \
+    FM_STATE_OVERRIDE="$CONTROL_STATE" FM_DATA_OVERRIDE="$CONTROL_DATA" \
+    FM_CONFIG_OVERRIDE="$TARGET_HOME/config" FM_SKIP_SECONDMATE_INHERIT=1 \
+    FM_SKIP_SECONDMATE_SYNC=1 \
+    "$SCRIPT_DIR/fm-control.sh" "$id" exit
+}
+
 
 cmd_send() {
   local id=$1 message=$2 delivery_mode=${3:-} rec ring_rc=0 meta meta_lock
@@ -422,6 +462,7 @@ cmd_retire() {
 case "${1:-}" in
   launch) shift; [ "$#" -ge 5 ] && [ "$#" -le 6 ] || usage; cmd_launch "$@" ;;
   relaunch) shift; [ "$#" -eq 4 ] || usage; cmd_relaunch "$@" ;;
+  exit) shift; [ "$#" -eq 1 ] || usage; cmd_exit "$1" ;;
   state) shift; [ "$#" -eq 1 ] || usage; validate_id "$1"; validate_home "$1"; state_value "$1" ;;
   route) shift; [ "$#" -eq 1 ] || usage; cmd_route "$1" ;;
   send) shift; [ "$#" -ge 2 ] && [ "$#" -le 3 ] || usage; cmd_send "$@" ;;

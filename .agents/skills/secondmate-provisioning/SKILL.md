@@ -2,8 +2,8 @@
 name: secondmate-provisioning
 description: >-
   Agent-only reference for persistent secondmate setup and retirement.
-  Use when creating, seeding, validating, launching, recovering, handing backlog to, pushing inherited local material into, or retiring a secondmate home, or when editing data/secondmates.md.
-  Covers local leases, whole-home remote routes, transactional seeding, record intake for an existing or inherited domain, project clone restrictions, secondmate harness pins, inherited local-material push, idle charter, handoff helper, and teardown safety.
+  Use when creating, seeding, validating, launching, recovering, sleeping, waking, handing backlog to, pushing inherited local material into, or retiring a secondmate home, or when editing data/secondmates.md.
+  Covers local leases, whole-home remote routes, transactional seeding, record intake for an existing or inherited domain, project clone restrictions, secondmate harness pins, inherited local-material push, idle charter, dormancy, handoff helper, and teardown safety.
 user-invocable: false
 metadata:
   internal: true
@@ -11,7 +11,7 @@ metadata:
 
 # secondmate-provisioning
 
-Use this reference before creating, seeding, validating, launching, handing backlog to, recovering, pushing inherited local material into, or retiring a persistent secondmate, and before editing `data/secondmates.md`.
+Use this reference before creating, seeding, validating, launching, handing backlog to, recovering, sleeping, waking, pushing inherited local material into, or retiring a persistent secondmate, and before editing `data/secondmates.md`.
 
 Keep the always-inline routing rules in `AGENTS.md` authoritative: route by natural-language `scope:`, local-only projects stay with the main firstmate, and secondmates are idle by default.
 
@@ -243,6 +243,21 @@ The main firstmate reconciles only direct reports.
 Each secondmate is a firstmate in its own home, so it runs recovery on startup and reconciles its own crewmates.
 A secondmate's recovery reconciles only work that is already its own and then idles.
 It never initiates a survey or audit during recovery.
+
+## Dormancy
+
+Sleep an idle persistent secondmate without retiring it, so a registered-but-idle home costs nothing to keep:
+
+```sh
+bin/fm-secondmate-dormancy.sh <id> enter
+bin/fm-secondmate-dormancy.sh <id> leave
+```
+
+Dormancy stops the agent only, preserving the home, backlog, knowledge, registry route, and metadata; it is not a retirement path.
+An entry is refused unless the mate's own home reports a settled summary with no active child work, no queued item, and no open decision, and this home holds no unresolved routed reply.
+An explicit routed request still wakes a sleeping mate, while routine machinery never does: config push, reconcile, and reply recovery leave it asleep.
+The marker is written only after a stop is proven and the endpoint reads confirmed stopped (`dead` or `missing`), so a mate is never recorded asleep while it is still running. The confirmed-stopped read and the marker write hold the same per-task spawn lock a liveness respawn try-acquires, so the guard and mark are atomic against a concurrent respawn.
+`bin/fm-secondmate-dormancy.sh`'s header owns the enter/leave policy and these refusals; `bin/fm-secondmate-dormancy-lib.sh` owns the marker format and the one wake path.
 
 ## Retirement and teardown
 
